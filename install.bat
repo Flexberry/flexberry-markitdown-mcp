@@ -28,6 +28,9 @@ echo Installing dependencies...
 python -m pip install --upgrade pip
 pip install -e .
 
+REM Prepare paths with escaped backslashes for JSON
+set "JSON_PATH=%CD:\=\\%"
+
 echo.
 echo === Installation complete! ===
 echo.
@@ -36,9 +39,9 @@ echo.
 echo {
 echo   "mcpServers": {
 echo     "flexberry-markitdown": {
-echo       "command": "%CD%\.venv\Scripts\python.exe",
+echo       "command": "%JSON_PATH%\\.venv\\Scripts\\python.exe",
 echo       "args": ["-m", "flexberry_markitdown_mcp.server"],
-echo       "cwd": "%CD%"
+echo       "cwd": "%JSON_PATH%"
 echo     }
 echo   }
 echo }
