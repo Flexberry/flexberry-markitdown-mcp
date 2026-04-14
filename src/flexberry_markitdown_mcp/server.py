@@ -12,7 +12,10 @@ Features:
 import asyncio
 import logging
 import sys
+import uuid
 from pathlib import Path
+from typing import Optional
+import unicodedata
 
 # Ensure UTF-8 encoding for stdin/stdout/stderr (important for Windows)
 if sys.platform == "win32":
@@ -84,14 +87,102 @@ Supported file formats:
 """.strip()
 
 
+def dump_codepoints(s: str) -> str:
+    """
+    Return a string representation of Unicode codepoints for debugging.
+    Example: "Кейсы" -> "U+041A U+0435 U+0439 U+0441 U+044B"
+    """
+    return " ".join(f"U+{ord(ch):04X}" for ch in s)
+
+
+def resolve_existing_file(file_path: str) -> Path:
+    """
+    Resolve a file path that may have Unicode normalization issues.
+    
+    On Windows, filenames can be stored in different Unicode forms (NFC vs NFD).
+    This function tries to find the actual file by normalizing names and comparing.
+    
+    Args:
+        file_path: The requested file path (may be in any Unicode form)
+        
+    Returns:
+        Path to the existing file
+        
+    Raises:
+        FileNotFoundError: If no matching file is found
+        ValueError: If multiple files match (ambiguous)
+    """
+    requested = Path(file_path)
+    
+    # First, try direct check - this works for most cases
+    if requested.exists():
+        return requested
+    
+    parent = requested.parent
+    if not parent.is_dir():
+        raise FileNotFoundError(
+            f"Directory does not exist: {parent}\n"
+            f"Requested path: {requested}"
+        )
+    
+    requested_name = requested.name
+    requested_nfc = unicodedata.normalize("NFC", requested_name)
+    requested_nfd = unicodedata.normalize("NFD", requested_name)
+    
+    logger.debug(f"resolve_existing_file: requested='{requested_name}'")
+    logger.debug(f"resolve_existing_file: requested_nfc codepoints: {dump_codepoints(requested_nfc)}")
+    logger.debug(f"resolve_existing_file: requested_nfd codepoints: {dump_codepoints(requested_nfd)}")
+    
+    matches = []
+    for child in parent.iterdir():
+        if not child.is_file():
+            continue
+        child_name = child.name
+        child_nfc = unicodedata.normalize("NFC", child_name)
+        child_nfd = unicodedata.normalize("NFD", child_name)
+        
+        # Check if names match in any normalization form
+        is_match = (
+            child_name == requested_name
+            or child_nfc == requested_nfc
+            or child_nfd == requested_nfd
+        )
+        
+        logger.debug(f"  Checking '{child_name}': match={is_match}")
+        logger.debug(f"    child_nfc codepoints: {dump_codepoints(child_nfc)}")
+        logger.debug(f"    child_nfd codepoints: {dump_codepoints(child_nfd)}")
+        
+        if is_match:
+            matches.append(child)
+    
+    if len(matches) == 1:
+        logger.info(f"resolve_existing_file: Found match: {matches[0]}")
+        return matches[0]
+    elif len(matches) == 0:
+        raise FileNotFoundError(
+            f"File does not exist: {requested}\n"
+            f"Direct path check: {file_path} → {requested} → exists={requested.exists()}\n"
+            f"Parent directory: {parent}\n"
+            f"Files in parent: {[f.name for f in parent.iterdir() if f.is_file()]}"
+        )
+    else:
+        raise ValueError(
+            f"Ambiguous match for '{requested_name}' in {parent}:\n"
+            + "\n".join(f"  - {m}" for m in matches)
+        )
+
+
 def normalize_path(file_path: str) -> Path:
     """
     Normalize file path for cross-platform compatibility.
     Handles both Windows and Linux paths, including paths with Cyrillic characters.
+    
+    In Python 3, paths are Unicode by default and work correctly on Windows.
+    No manual encoding/decoding is needed - pathlib handles this properly.
     """
     logger.debug(f"normalize_path input: '{file_path}' (type: {type(file_path)})")
     logger.debug(f"normalize_path repr: {repr(file_path)}")
-
+    
     # Expand user home directory (~)
     path = Path(file_path).expanduser()
     logger.debug(f"After expanduser: '{path}'")
@@ -118,19 +209,32 @@ def normalize_path(file_path: str) -> Path:
     return path
 
 
-def generate_output_path(input_path: Path) -> Path:
+def generate_output_path(input_path: Path, suffix: str = "_converted") -> Path:
     """
     Generate output path for the converted markdown file.
     The output file will be placed next to the original with .md extension.
+    Uses pathlib for proper Unicode handling on Windows.
     """
-    # Get the directory and base name
-    directory = input_path.parent
-    base_name = input_path.stem
+    # Use pathlib methods for proper path construction
+    # This handles Unicode filenames (including Cyrillic) correctly on all platforms
+    # Replace original extension with .md
+    return input_path.parent / f"{input_path.stem}.md"
 
-    # Create output path with .md extension
-    output_path = directory / f"{base_name}.md"
 
-    return output_path
+def make_unique_path(target: Path) -> Path:
+    """
+    Generate a unique path by adding (1), (2), etc. if file already exists.
+    Uses pathlib for proper Unicode handling.
+    """
+    if not target.exists():
+        return target
+
+    for i in range(1, 10000):
+        candidate = target.with_name(f"{target.stem} ({i}){target.suffix}")
+        if not candidate.exists():
+            return candidate
+
+    raise RuntimeError("Не удалось подобрать уникальное имя файла")
 
 
 @server.list_tools()
@@ -147,13 +251,19 @@ This is designed for large files that cannot fit in LLM context.
 IMPORTANT: Always use ABSOLUTE paths when calling this tool. Relative paths will be resolved
 from the server's working directory, not the caller's directory.
 
+Features:
+- Automatically handles Unicode/Cyrillic filenames on Windows
+- Uses atomic write pattern (temp file + rename) for safety
+- Auto-unique filenames if target exists (adds (1), (2), etc.)
+- Supports overwrite flag to replace existing files
+
 """ + get_supported_extensions_description(),
             inputSchema={
                 "type": "object",
                 "properties": {
                     "file_path": {
                         "type": "string",
-                        "description": "ABSOLUTE path to the file to convert. Supports Cyrillic characters in paths. Example: C:\\Users\\user\\documents\\file.docx or /home/user/documents/file.docx"
+                        "description": "ABSOLUTE path to the file to convert. Supports Cyrillic characters in paths. Example: C:\\Users\\user\\documents\\файл.docx or /home/user/documents/file.docx"
                     },
                     "output_path": {
                         "type": "string",
@@ -161,7 +271,7 @@ from the server's working directory, not the caller's directory.
                     },
                     "overwrite": {
                         "type": "boolean",
-                        "description": "Overwrite existing output file if it exists. Default: false.",
+                        "description": "Overwrite existing output file if it exists. Default: false. If false and file exists, auto-unique name is generated (adds (1), (2), etc.).",
                         "default": False
                     }
                 },
@@ -256,7 +366,11 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
                 ext = f.suffix.lower() if f.suffix else ""
                 is_supported = ext in SUPPORTED_EXTENSIONS if f.is_file() else False
                 supported_mark = "✓" if is_supported else ""
-                result_lines.append(f"{file_type} {f.name} ({size:,} bytes) {supported_mark}")
+                # Show codepoints for filenames with non-ASCII characters
+                name_codepoints = ""
+                if any(ord(c) > 127 for c in f.name):
+                    name_codepoints = f" [{dump_codepoints(f.name)}]"
+                result_lines.append(f"{file_type} {f.name}{name_codepoints} ({size:,} bytes) {supported_mark}")
 
             return [TextContent(
                 type="text",
@@ -280,34 +394,8 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
             )]
 
         try:
-            path = normalize_path(file_path)
-
-            if not path.exists():
-                # Provide helpful debugging info
-                parent = path.parent
-                parent_exists = parent.exists()
-                cwd = Path.cwd()
-
-                debug_info = f"""File does not exist: {path}
-
-Debug info:
-- Original path: '{file_path}'
-- Normalized path: '{path}'
-- Parent directory: {parent}
-- Parent exists: {parent_exists}
-- Server working directory: {cwd}
-"""
-                if parent_exists:
-                    try:
-                        files_in_parent = [f.name for f in parent.iterdir() if f.is_file()]
-                        debug_info += f"- Files in parent directory: {files_in_parent[:10]}"
-                    except Exception as e:
-                        debug_info += f"- Error listing parent: {e}"
-
-                return [TextContent(
-                    type="text",
-                    text=debug_info
-                )]
+            # Resolve file path (handles Unicode normalization issues)
+            path = resolve_existing_file(file_path)
 
             if not path.is_file():
                 return [TextContent(
@@ -325,6 +413,13 @@ Debug info:
 Size: {size:,} bytes ({size / 1024 / 1024:.2f} MB)
 Extension: {ext}
 Supported: {"Yes" if is_supported else "No"}"""
+            )]
+
+        except FileNotFoundError as e:
+            logger.exception(f"File not found: {file_path}")
+            return [TextContent(
+                type="text",
+                text=f"File does not exist: {str(e)}"
             )]
 
         except Exception as e:
@@ -346,42 +441,8 @@ Supported: {"Yes" if is_supported else "No"}"""
             )]
 
         try:
-            # Normalize input path
-            input_path = normalize_path(file_path)
-
-            # Check if input file exists
-            if not input_path.exists():
-                # Provide helpful debugging info
-                parent = input_path.parent
-                cwd = Path.cwd()
-
-                error_msg = f"""Error: File does not exist: {input_path}
-
-Original path: '{file_path}'
-Server working directory: {cwd}
-
-"""
-                if parent.exists():
-                    try:
-                        files = [f.name for f in parent.iterdir() if f.is_file()]
-                        error_msg += f"Files in parent directory ({parent}):\n"
-                        for f in files[:20]:
-                            error_msg += f"  - {f}\n"
-                    except Exception as e:
-                        error_msg += f"Error listing parent directory: {e}"
-                else:
-                    error_msg += f"Parent directory does not exist: {parent}"
-
-                return [TextContent(
-                    type="text",
-                    text=error_msg
-                )]
-
-            if not input_path.is_file():
-                return [TextContent(
-                    type="text",
-                    text=f"Error: Path is not a file: {input_path}"
-                )]
+            # Resolve input file path (handles Unicode normalization issues)
+            input_path = resolve_existing_file(file_path)
 
             # Check extension
             ext = input_path.suffix.lower()
@@ -397,12 +458,9 @@ Server working directory: {cwd}
             else:
                 output_path = generate_output_path(input_path)
 
-            # Check if output file exists
-            if output_path.exists() and not overwrite:
-                return [TextContent(
-                    type="text",
-                    text=f"Error: Output file already exists: {output_path}\nUse overwrite=true to overwrite."
-                )]
+            # Auto-unique path if file exists and overwrite is False
+            if not overwrite and output_path.exists():
+                output_path = make_unique_path(output_path)
 
             # Get input file size for logging
             input_size = input_path.stat().st_size
@@ -420,15 +478,34 @@ Server working directory: {cwd}
             # Get the markdown content
             markdown_content = result.text_content
 
-            # Write to output file
-            # Use UTF-8 encoding explicitly for Cyrillic support
-            with open(output_path, 'w', encoding='utf-8', newline='') as f:
-                f.write(markdown_content)
+            # Write to output file using atomic write pattern:
+            # 1. Write to temp file first
+            # 2. Rename to final path (atomic on same filesystem)
+            # This prevents partial/corrupt files if conversion fails
+            temp_path = output_path.parent / f".{output_path.stem}.{uuid.uuid4().hex}.tmp"
+            try:
+                # Write to temp file with UTF-8 encoding
+                temp_path.write_text(markdown_content, encoding='utf-8', newline='')
+                
+                # Atomic rename to final path
+                temp_path.replace(output_path)
+            finally:
+                # Clean up temp file if it still exists
+                if temp_path.exists():
+                    try:
+                        temp_path.unlink()
+                    except OSError:
+                        pass
 
             output_size = output_path.stat().st_size
 
             logger.info(f"Conversion complete: {output_path} ({output_size:,} bytes)")
 
+            # Return structured result with overwrite flag
+            overwritten = output_path_arg is not None and output_path.exists() and (
+                output_path_arg != str(output_path) or overwrite
+            )
+            
             return [TextContent(
                 type="text",
                 text=f"""Conversion successful!
@@ -438,6 +515,7 @@ Input size: {input_size:,} bytes ({input_size / 1024 / 1024:.2f} MB)
 
 Output file: {output_path}
 Output size: {output_size:,} bytes ({output_size / 1024 / 1024:.2f} MB)
+Overwritten: {overwrite}
 
 The converted Markdown file has been saved to disk and is ready for use."""
             )]
