@@ -39,6 +39,7 @@ Thumbs.db
 # GitHub templates
 .github/
 !.github/PULL_REQUEST_TEMPLATE.md
+!.github/PULL_REQUEST_TEMPLATE_EN.md
 !.github/ISSUE_TEMPLATE/
 !.github/ISSUE_TEMPLATE/*.md
 !.github/workflows/
