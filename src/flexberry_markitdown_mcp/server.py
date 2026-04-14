@@ -12,18 +12,25 @@ Features:
 import asyncio
 import logging
 import sys
+import unicodedata
 import uuid
 from pathlib import Path
-from typing import Optional
-import unicodedata
+
+# Import version from package
+try:
+    from . import __version__
+except ImportError:
+    __version__ = "1.0.0"
 
 # Ensure UTF-8 encoding for stdin/stdout/stderr (important for Windows)
 if sys.platform == "win32":
-    sys.stdin.reconfigure(encoding='utf-8')
-    sys.stdout.reconfigure(encoding='utf-8')
-    sys.stderr.reconfigure(encoding='utf-8')
+    sys.stdin.reconfigure(encoding="utf-8")
+    sys.stdout.reconfigure(encoding="utf-8")
+    sys.stderr.reconfigure(encoding="utf-8")
 
-from mcp.server import NotificationOptions, Server, InitializationOptions, stdio
+import contextlib
+
+from mcp.server import InitializationOptions, NotificationOptions, Server, stdio
 from mcp.types import TextContent, Tool
 
 # Configure logging to file (since stdout is used for MCP communication)
@@ -32,11 +39,9 @@ log_dir.mkdir(parents=True, exist_ok=True)
 log_file = log_dir / "server.log"
 
 logging.basicConfig(
-    level=logging.DEBUG,  # Increased logging level for debugging
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.FileHandler(log_file, encoding='utf-8')
-    ]
+    level=logging.INFO,
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    handlers=[logging.FileHandler(log_file, encoding="utf-8")],
 )
 logger = logging.getLogger(__name__)
 
@@ -54,21 +59,43 @@ markitdown = MarkItDown()
 # Supported file extensions
 SUPPORTED_EXTENSIONS = {
     # Documents
-    '.pdf', '.docx', '.doc', '.pptx', '.ppt', '.xlsx', '.xls',
+    ".pdf",
+    ".docx",
+    ".doc",
+    ".pptx",
+    ".ppt",
+    ".xlsx",
+    ".xls",
     # Web
-    '.html', '.htm', '.xml', '.url',
+    ".html",
+    ".htm",
+    ".xml",
+    ".url",
     # Data
-    '.csv', '.json',
+    ".csv",
+    ".json",
     # Code/Text
-    '.md', '.rst', '.txt',
+    ".md",
+    ".rst",
+    ".txt",
     # Images (with OCR)
-    '.png', '.jpg', '.jpeg', '.gif', '.bmp', '.tiff', '.webp',
+    ".png",
+    ".jpg",
+    ".jpeg",
+    ".gif",
+    ".bmp",
+    ".tiff",
+    ".webp",
     # Audio (with transcription)
-    '.mp3', '.wav', '.m4a', '.ogg', '.flac',
+    ".mp3",
+    ".wav",
+    ".m4a",
+    ".ogg",
+    ".flac",
     # Archives
-    '.zip',
+    ".zip",
     # E-books
-    '.epub',
+    ".epub",
 }
 
 
@@ -98,41 +125,34 @@ def dump_codepoints(s: str) -> str:
 def resolve_existing_file(file_path: str) -> Path:
     """
     Resolve a file path that may have Unicode normalization issues.
-    
+
     On Windows, filenames can be stored in different Unicode forms (NFC vs NFD).
     This function tries to find the actual file by normalizing names and comparing.
-    
+
     Args:
         file_path: The requested file path (may be in any Unicode form)
-        
+
     Returns:
         Path to the existing file
-        
+
     Raises:
         FileNotFoundError: If no matching file is found
         ValueError: If multiple files match (ambiguous)
     """
     requested = Path(file_path)
-    
+
     # First, try direct check - this works for most cases
     if requested.exists():
         return requested
-    
+
     parent = requested.parent
     if not parent.is_dir():
-        raise FileNotFoundError(
-            f"Directory does not exist: {parent}\n"
-            f"Requested path: {requested}"
-        )
-    
+        raise FileNotFoundError(f"Directory does not exist: {parent}\nRequested path: {requested}")
+
     requested_name = requested.name
     requested_nfc = unicodedata.normalize("NFC", requested_name)
     requested_nfd = unicodedata.normalize("NFD", requested_name)
-    
-    logger.debug(f"resolve_existing_file: requested='{requested_name}'")
-    logger.debug(f"resolve_existing_file: requested_nfc codepoints: {dump_codepoints(requested_nfc)}")
-    logger.debug(f"resolve_existing_file: requested_nfd codepoints: {dump_codepoints(requested_nfd)}")
-    
+
     matches = []
     for child in parent.iterdir():
         if not child.is_file():
@@ -140,21 +160,13 @@ def resolve_existing_file(file_path: str) -> Path:
         child_name = child.name
         child_nfc = unicodedata.normalize("NFC", child_name)
         child_nfd = unicodedata.normalize("NFD", child_name)
-        
+
         # Check if names match in any normalization form
-        is_match = (
-            child_name == requested_name
-            or child_nfc == requested_nfc
-            or child_nfd == requested_nfd
-        )
-        
-        logger.debug(f"  Checking '{child_name}': match={is_match}")
-        logger.debug(f"    child_nfc codepoints: {dump_codepoints(child_nfc)}")
-        logger.debug(f"    child_nfd codepoints: {dump_codepoints(child_nfd)}")
-        
+        is_match = child_name == requested_name or child_nfc == requested_nfc or child_nfd == requested_nfd
+
         if is_match:
             matches.append(child)
-    
+
     if len(matches) == 1:
         logger.info(f"resolve_existing_file: Found match: {matches[0]}")
         return matches[0]
@@ -167,44 +179,24 @@ def resolve_existing_file(file_path: str) -> Path:
         )
     else:
         raise ValueError(
-            f"Ambiguous match for '{requested_name}' in {parent}:\n"
-            + "\n".join(f"  - {m}" for m in matches)
+            f"Ambiguous match for '{requested_name}' in {parent}:\n" + "\n".join(f"  - {m}" for m in matches)
         )
 
 
 def normalize_path(file_path: str) -> Path:
     """
     Normalize file path for cross-platform compatibility.
+
     Handles both Windows and Linux paths, including paths with Cyrillic characters.
-    
+
     In Python 3, paths are Unicode by default and work correctly on Windows.
     No manual encoding/decoding is needed - pathlib handles this properly.
     """
-    logger.debug(f"normalize_path input: '{file_path}' (type: {type(file_path)})")
-    logger.debug(f"normalize_path repr: {repr(file_path)}")
-    
     # Expand user home directory (~)
     path = Path(file_path).expanduser()
-    logger.debug(f"After expanduser: '{path}'")
 
     # Resolve to absolute path
     path = path.resolve()
-    logger.debug(f"After resolve: '{path}'")
-
-    # Check if path exists (for debugging)
-    exists = path.exists()
-    logger.debug(f"Path exists: {exists}")
-
-    if not exists:
-        # Try to list parent directory for debugging
-        parent = path.parent
-        if parent.exists():
-            logger.debug(f"Parent directory exists: {parent}")
-            try:
-                files = list(parent.iterdir())
-                logger.debug(f"Files in parent: {[f.name for f in files[:10]]}")
-            except Exception as e:
-                logger.debug(f"Error listing parent: {e}")
 
     return path
 
@@ -257,26 +249,27 @@ Features:
 - Auto-unique filenames if target exists (adds (1), (2), etc.)
 - Supports overwrite flag to replace existing files
 
-""" + get_supported_extensions_description(),
+"""
+            + get_supported_extensions_description(),
             inputSchema={
                 "type": "object",
                 "properties": {
                     "file_path": {
                         "type": "string",
-                        "description": "ABSOLUTE path to the file to convert. Supports Cyrillic characters in paths. Example: C:\\Users\\user\\documents\\файл.docx or /home/user/documents/file.docx"
+                        "description": "ABSOLUTE path to the file to convert. Supports Cyrillic characters in paths. Example: C:\\Users\\user\\documents\\файл.docx or /home/user/documents/file.docx",
                     },
                     "output_path": {
                         "type": "string",
-                        "description": "Optional custom output path. If not specified, saves next to the original file with .md extension."
+                        "description": "Optional custom output path. If not specified, saves next to the original file with .md extension.",
                     },
                     "overwrite": {
                         "type": "boolean",
                         "description": "Overwrite existing output file if it exists. Default: false. If false and file exists, auto-unique name is generated (adds (1), (2), etc.).",
-                        "default": False
-                    }
+                        "default": False,
+                    },
                 },
-                "required": ["file_path"]
-            }
+                "required": ["file_path"],
+            },
         ),
         Tool(
             name="get_supported_formats",
@@ -284,21 +277,16 @@ Features:
             inputSchema={
                 "type": "object",
                 "properties": {},
-            }
+            },
         ),
         Tool(
             name="check_file_exists",
             description="Check if a file exists and get its information. Use ABSOLUTE paths.",
             inputSchema={
                 "type": "object",
-                "properties": {
-                    "file_path": {
-                        "type": "string",
-                        "description": "ABSOLUTE path to the file to check."
-                    }
-                },
-                "required": ["file_path"]
-            }
+                "properties": {"file_path": {"type": "string", "description": "ABSOLUTE path to the file to check."}},
+                "required": ["file_path"],
+            },
         ),
         Tool(
             name="list_directory",
@@ -308,15 +296,15 @@ Features:
                 "properties": {
                     "directory_path": {
                         "type": "string",
-                        "description": "ABSOLUTE path to the directory to list. Leave empty to list current working directory."
+                        "description": "ABSOLUTE path to the directory to list. Leave empty to list current working directory.",
                     },
                     "pattern": {
                         "type": "string",
-                        "description": "Optional glob pattern to filter files (e.g., '*.docx', '*.pdf')."
-                    }
+                        "description": "Optional glob pattern to filter files (e.g., '*.docx', '*.pdf').",
+                    },
                 },
-                "required": []
-            }
+                "required": [],
+            },
         ),
     ]
 
@@ -327,10 +315,7 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
     logger.info(f"Tool called: {name} with arguments: {arguments}")
 
     if name == "get_supported_formats":
-        return [TextContent(
-            type="text",
-            text=get_supported_extensions_description()
-        )]
+        return [TextContent(type="text", text=get_supported_extensions_description())]
 
     if name == "list_directory":
         directory_path = arguments.get("directory_path", "")
@@ -342,19 +327,11 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
             else:
                 dir_path = Path.cwd()
 
-            logger.debug(f"Listing directory: {dir_path}")
-
             if not dir_path.exists():
-                return [TextContent(
-                    type="text",
-                    text=f"Directory does not exist: {dir_path}"
-                )]
+                return [TextContent(type="text", text=f"Directory does not exist: {dir_path}")]
 
             if not dir_path.is_dir():
-                return [TextContent(
-                    type="text",
-                    text=f"Path is not a directory: {dir_path}"
-                )]
+                return [TextContent(type="text", text=f"Path is not a directory: {dir_path}")]
 
             files = list(dir_path.glob(pattern))
 
@@ -372,62 +349,46 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
                     name_codepoints = f" [{dump_codepoints(f.name)}]"
                 result_lines.append(f"{file_type} {f.name}{name_codepoints} ({size:,} bytes) {supported_mark}")
 
-            return [TextContent(
-                type="text",
-                text="\n".join(result_lines)
-            )]
+            return [TextContent(type="text", text="\n".join(result_lines))]
 
         except Exception as e:
             logger.exception(f"Error listing directory: {directory_path}")
-            return [TextContent(
-                type="text",
-                text=f"Error listing directory: {str(e)}"
-            )]
+            return [TextContent(type="text", text=f"Error listing directory: {str(e)}")]
 
     if name == "check_file_exists":
         file_path = arguments.get("file_path", "")
 
         if not file_path:
-            return [TextContent(
-                type="text",
-                text="Error: file_path is required."
-            )]
+            return [TextContent(type="text", text="Error: file_path is required.")]
 
         try:
             # Resolve file path (handles Unicode normalization issues)
             path = resolve_existing_file(file_path)
 
             if not path.is_file():
-                return [TextContent(
-                    type="text",
-                    text=f"Path is not a file: {path}"
-                )]
+                return [TextContent(type="text", text=f"Path is not a file: {path}")]
 
             size = path.stat().st_size
             ext = path.suffix.lower()
             is_supported = ext in SUPPORTED_EXTENSIONS
 
-            return [TextContent(
-                type="text",
-                text=f"""File: {path}
+            return [
+                TextContent(
+                    type="text",
+                    text=f"""File: {path}
 Size: {size:,} bytes ({size / 1024 / 1024:.2f} MB)
 Extension: {ext}
-Supported: {"Yes" if is_supported else "No"}"""
-            )]
+Supported: {"Yes" if is_supported else "No"}""",
+                )
+            ]
 
         except FileNotFoundError as e:
             logger.exception(f"File not found: {file_path}")
-            return [TextContent(
-                type="text",
-                text=f"File does not exist: {str(e)}"
-            )]
+            return [TextContent(type="text", text=f"File does not exist: {str(e)}")]
 
         except Exception as e:
             logger.exception(f"Error checking file: {file_path}")
-            return [TextContent(
-                type="text",
-                text=f"Error checking file: {str(e)}"
-            )]
+            return [TextContent(type="text", text=f"Error checking file: {str(e)}")]
 
     if name == "convert_to_markdown":
         file_path = arguments.get("file_path", "")
@@ -435,10 +396,7 @@ Supported: {"Yes" if is_supported else "No"}"""
         overwrite = arguments.get("overwrite", False)
 
         if not file_path:
-            return [TextContent(
-                type="text",
-                text="Error: file_path is required."
-            )]
+            return [TextContent(type="text", text="Error: file_path is required.")]
 
         try:
             # Resolve input file path (handles Unicode normalization issues)
@@ -447,10 +405,12 @@ Supported: {"Yes" if is_supported else "No"}"""
             # Check extension
             ext = input_path.suffix.lower()
             if ext not in SUPPORTED_EXTENSIONS:
-                return [TextContent(
-                    type="text",
-                    text=f"Error: Unsupported file format '{ext}'.\n\n{get_supported_extensions_description()}"
-                )]
+                return [
+                    TextContent(
+                        type="text",
+                        text=f"Error: Unsupported file format '{ext}'.\n\n{get_supported_extensions_description()}",
+                    )
+                ]
 
             # Determine output path
             if output_path_arg:
@@ -469,11 +429,7 @@ Supported: {"Yes" if is_supported else "No"}"""
             # Convert the file using MarkItDown
             # Run in executor to avoid blocking the event loop for large files
             loop = asyncio.get_event_loop()
-            result = await loop.run_in_executor(
-                None,
-                markitdown.convert,
-                str(input_path)
-            )
+            result = await loop.run_in_executor(None, markitdown.convert, str(input_path))
 
             # Get the markdown content
             markdown_content = result.text_content
@@ -485,30 +441,25 @@ Supported: {"Yes" if is_supported else "No"}"""
             temp_path = output_path.parent / f".{output_path.stem}.{uuid.uuid4().hex}.tmp"
             try:
                 # Write to temp file with UTF-8 encoding
-                temp_path.write_text(markdown_content, encoding='utf-8', newline='')
-                
+                temp_path.write_text(markdown_content, encoding="utf-8", newline="")
+
                 # Atomic rename to final path
                 temp_path.replace(output_path)
             finally:
                 # Clean up temp file if it still exists
                 if temp_path.exists():
-                    try:
+                    with contextlib.suppress(OSError):
                         temp_path.unlink()
-                    except OSError:
-                        pass
 
             output_size = output_path.stat().st_size
 
             logger.info(f"Conversion complete: {output_path} ({output_size:,} bytes)")
 
             # Return structured result with overwrite flag
-            overwritten = output_path_arg is not None and output_path.exists() and (
-                output_path_arg != str(output_path) or overwrite
-            )
-            
-            return [TextContent(
-                type="text",
-                text=f"""Conversion successful!
+            return [
+                TextContent(
+                    type="text",
+                    text=f"""Conversion successful!
 
 Input file: {input_path}
 Input size: {input_size:,} bytes ({input_size / 1024 / 1024:.2f} MB)
@@ -517,20 +468,17 @@ Output file: {output_path}
 Output size: {output_size:,} bytes ({output_size / 1024 / 1024:.2f} MB)
 Overwritten: {overwrite}
 
-The converted Markdown file has been saved to disk and is ready for use."""
-            )]
+The converted Markdown file has been saved to disk and is ready for use.""",
+                )
+            ]
 
         except Exception as e:
             logger.exception(f"Error converting file: {file_path}")
-            return [TextContent(
-                type="text",
-                text=f"Error converting file: {str(e)}\n\nCheck the log file at: {log_file}"
-            )]
+            return [
+                TextContent(type="text", text=f"Error converting file: {str(e)}\n\nCheck the log file at: {log_file}")
+            ]
 
-    return [TextContent(
-        type="text",
-        text=f"Error: Unknown tool '{name}'"
-    )]
+    return [TextContent(type="text", text=f"Error: Unknown tool '{name}'")]
 
 
 async def run_server():
@@ -552,12 +500,12 @@ async def run_server():
                 write_stream,
                 InitializationOptions(
                     server_name="flexberry-markitdown-mcp",
-                    server_version="1.0.0",
+                    server_version=__version__,
                     capabilities=server.get_capabilities(
                         notification_options=NotificationOptions(),
                         experimental_capabilities={},
                     ),
-                )
+                ),
             )
             logger.info("server.run completed")
     except Exception as e:
