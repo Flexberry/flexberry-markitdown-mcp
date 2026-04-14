@@ -1,0 +1,59 @@
+{
+  "_comment": "Примеры конфигурации MCP сервера для RooCode. Скопируйте нужный вариант в ваш mcp_settings.json",
+  
+  "windows_example": {
+    "mcpServers": {
+      "flexberry-markitdown": {
+        "command": "python",
+        "args": ["-m", "flexberry_markitdown_mcp.server"],
+        "cwd": "C:\\Users\\YourUser\\flexberry-markitdown-mcp",
+        "_comment": "Замените YourUser на ваше имя пользователя"
+      }
+    }
+  },
+  
+  "windows_venv_example": {
+    "mcpServers": {
+      "flexberry-markitdown": {
+        "command": "C:\\Users\\YourUser\\flexberry-markitdown-mcp\\.venv\\Scripts\\python.exe",
+        "args": ["-m", "flexberry_markitdown_mcp.server"],
+        "cwd": "C:\\Users\\YourUser\\flexberry-markitdown-mcp"
+      }
+    }
+  },
+  
+  "linux_example": {
+    "mcpServers": {
+      "flexberry-markitdown": {
+        "command": "python3",
+        "args": ["-m", "flexberry_markitdown_mcp.server"],
+        "cwd": "/home/youruser/flexberry-markitdown-mcp"
+      }
+    }
+  },
+  
+  "linux_venv_example": {
+    "mcpServers": {
+      "flexberry-markitdown": {
+        "command": "/home/youruser/flexberry-markitdown-mcp/.venv/bin/python",
+        "args": ["-m", "flexberry_markitdown_mcp.server"],
+        "cwd": "/home/youruser/flexberry-markitdown-mcp"
+      }
+    }
+  },
+  
+  "uv_universal_example": {
+    "mcpServers": {
+      "flexberry-markitdown": {
+        "command": "uv",
+        "args": [
+          "--directory",
+          "/path/to/flexberry-markitdown-mcp",
+          "run",
+          "flexberry-markitdown-mcp"
+        ],
+        "_comment": "Замените /path/to на реальный путь к проекту"
+      }
+    }
+  }
+}
