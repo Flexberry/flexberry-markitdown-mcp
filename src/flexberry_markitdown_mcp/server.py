@@ -22,9 +22,9 @@ if sys.platform == "win32":
     sys.stdout.reconfigure(encoding='utf-8')
     sys.stderr.reconfigure(encoding='utf-8')
 
-from mcp.server import Server
+from mcp.server import Server, InitializationOptions
 from mcp.server.stdio import stdio_server
-from mcp.types import Tool, TextContent
+from mcp.types import Tool, TextContent, ServerCapabilities, ToolsCapability
 
 # Configure logging to file (since stdout is used for MCP communication)
 log_dir = Path.home() / ".flexberry-markitdown-mcp"
@@ -334,7 +334,19 @@ def main():
     logger.info(f"Log file: {log_file}")
     
     # Run the server using stdio transport
-    asyncio.run(stdio_server(server).serve())
+    async def run_server():
+        initialization_options = InitializationOptions(
+            server_name="flexberry-markitdown-mcp",
+            server_version="1.0.0",
+            capabilities=ServerCapabilities(
+                tools=ToolsCapability()
+            )
+        )
+        
+        async with stdio_server() as (read_stream, write_stream):
+            await server.run(read_stream, write_stream, initialization_options)
+    
+    asyncio.run(run_server())
 
 
 if __name__ == "__main__":
