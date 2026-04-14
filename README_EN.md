@@ -2,6 +2,7 @@
 
 [![GitHub](https://img.shields.io/badge/GitHub-Flexberry%2Fflexberry--markitdown--mcp-blue)](https://github.com/Flexberry/flexberry-markitdown-mcp)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![PyPI version](https://img.shields.io/pypi/v/flexberry-markitdown-mcp)](https://pypi.org/project/flexberry-markitdown-mcp/)
 
 MCP server for converting files to Markdown using MarkItDown library by Microsoft.
 
@@ -30,7 +31,17 @@ MCP server for converting files to Markdown using MarkItDown library by Microsof
 
 ## Installation
 
-### Option 1: Install via pip (recommended)
+### Option 1: Install from PyPI (recommended)
+
+```bash
+# Install via pip
+pip install flexberry-markitdown-mcp
+
+# Install with development dependencies
+pip install flexberry-markitdown-mcp[dev]
+```
+
+### Option 2: Install from source
 
 ```bash
 # Clone the repository
@@ -50,10 +61,17 @@ source .venv/bin/activate
 pip install -e .
 ```
 
-### Option 2: Install dependencies directly
+### Option 3: Use installation scripts
 
+#### Linux/macOS:
 ```bash
-pip install mcp markitdown
+chmod +x install.sh
+./install.sh
+```
+
+#### Windows:
+```cmd
+install.bat
 ```
 
 ## RooCode Configuration
@@ -67,8 +85,7 @@ Add to RooCode settings (`mcp_settings.json` or via interface):
   "mcpServers": {
     "flexberry-markitdown": {
       "command": "python",
-      "args": ["-m", "flexberry_markitdown_mcp.server"],
-      "cwd": "C:\\path\\to\\flexberry-markitdown-mcp"
+      "args": ["-m", "flexberry_markitdown_mcp.server"]
     }
   }
 }
@@ -95,8 +112,7 @@ Or with virtual environment:
   "mcpServers": {
     "flexberry-markitdown": {
       "command": "python3",
-      "args": ["-m", "flexberry_markitdown_mcp.server"],
-      "cwd": "/home/user/flexberry-markitdown-mcp"
+      "args": ["-m", "flexberry_markitdown_mcp.server"]
     }
   }
 }
@@ -203,13 +219,13 @@ Server logs are saved to:
 ### Error: "MarkItDown not installed"
 
 ```bash
-pip install markitdown
+pip install flexberry-markitdown-mcp
 ```
 
 ### Error: "MCP module not found"
 
 ```bash
-pip install mcp
+pip install flexberry-markitdown-mcp
 ```
 
 ### Cyrillic issues in Windows
@@ -248,9 +264,11 @@ flexberry-markitdown-mcp/
 │       ├── __init__.py
 │       └── server.py
 ├── pyproject.toml
-├── README.md
+├── README_EN.md
 ├── install.sh
 ├── install.bat
+├── uninstall.sh
+├── uninstall.bat
 └── roocode-config-examples.json
 ```
 
