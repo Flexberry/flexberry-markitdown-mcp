@@ -21,7 +21,7 @@ classifiers = [
 
 dependencies = [
     "mcp>=1.0.0",
-    "markitdown>=0.0.1a2",
+    "markitdown[all]>=0.0.1a2",
 ]
 
 [project.optional-dependencies]
