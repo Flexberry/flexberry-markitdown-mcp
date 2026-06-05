@@ -123,7 +123,7 @@ try:
     import weasyprint  # noqa: F401
 
     _WEASYPRINT_AVAILABLE = True
-except ImportError:
+except (ImportError, OSError):
     pass
 
 
