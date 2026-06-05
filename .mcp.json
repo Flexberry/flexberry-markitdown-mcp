@@ -1,0 +1,18 @@
+{
+	"mcpServers": {
+		"flexberry-markitdown": {
+			"command": "python",
+			"args": [
+				"-m",
+				"flexberry_markitdown_mcp.server"
+			],
+			"alwaysAllow": [
+				"get_supported_formats",
+				"list_directory",
+				"check_file_exists",
+				"convert_to_markdown"
+			],
+			"disabled": false
+		}
+	}
+}
