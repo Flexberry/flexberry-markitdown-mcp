@@ -1,6 +1,6 @@
 [project]
 name = "flexberry-markitdown-mcp"
-version = "2.0.0"
+version = "2.0.1"
 description = "MCP server for converting files to Markdown (via MarkItDown) and Markdown to PDF"
 readme = "README_EN.md"
 requires-python = ">=3.10"
