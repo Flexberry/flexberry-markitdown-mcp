@@ -152,6 +152,7 @@ class TestServerTools:
         tool_names = [tool.name for tool in tools]
 
         assert "convert_to_markdown" in tool_names
+        assert "convert_to_pdf" in tool_names
         assert "get_supported_formats" in tool_names
         assert "check_file_exists" in tool_names
         assert "list_directory" in tool_names
@@ -303,3 +304,141 @@ class TestServerTools:
         assert len(result) == 1
         assert isinstance(result[0], TextContent)
         assert "Error" in result[0].text
+
+    # ── convert_to_pdf ──────────────────────────────────────────────────
+
+    @pytest.mark.asyncio
+    async def test_call_tool_convert_to_pdf_basic(self):
+        """Test basic convert_to_pdf with WeasyPrint backend."""
+        from flexberry_markitdown_mcp.server import call_tool
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            md_file = Path(tmpdir) / "test.md"
+            md_file.write_text("# Hello PDF\n\nThis is a test.", encoding="utf-8")
+
+            result = await call_tool("convert_to_pdf", {
+                "file_path": str(md_file),
+                "backend": "weasyprint",
+            })
+            assert isinstance(result, list)
+            assert len(result) == 1
+            assert isinstance(result[0], TextContent)
+            assert "PDF conversion successful" in result[0].text
+            assert "weasyprint" in result[0].text
+
+            output_file = Path(tmpdir) / "test.pdf"
+            assert output_file.exists()
+
+    @pytest.mark.asyncio
+    async def test_call_tool_convert_to_pdf_custom_output(self):
+        """Test convert_to_pdf with explicit output_path."""
+        from flexberry_markitdown_mcp.server import call_tool
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            md_file = Path(tmpdir) / "input.md"
+            md_file.write_text("# Custom Output\n\nTest.", encoding="utf-8")
+            output_path = str(Path(tmpdir) / "custom.pdf")
+
+            result = await call_tool("convert_to_pdf", {
+                "file_path": str(md_file),
+                "output_path": output_path,
+                "backend": "weasyprint",
+            })
+            assert isinstance(result, list)
+            assert len(result) == 1
+            assert isinstance(result[0], TextContent)
+            assert "PDF conversion successful" in result[0].text
+            assert Path(output_path).exists()
+
+    @pytest.mark.asyncio
+    async def test_call_tool_convert_to_pdf_missing_file_path(self):
+        """Test convert_to_pdf without file_path returns error."""
+        from flexberry_markitdown_mcp.server import call_tool
+
+        result = await call_tool("convert_to_pdf", {})
+        assert isinstance(result, list)
+        assert len(result) == 1
+        assert isinstance(result[0], TextContent)
+        assert "Error" in result[0].text
+        assert "file_path" in result[0].text
+
+    @pytest.mark.asyncio
+    async def test_call_tool_convert_to_pdf_nonexistent_file(self):
+        """Test convert_to_pdf with a file that does not exist."""
+        from flexberry_markitdown_mcp.server import call_tool
+
+        result = await call_tool("convert_to_pdf", {
+            "file_path": "/nonexistent/file.md",
+            "backend": "weasyprint",
+        })
+        assert isinstance(result, list)
+        assert len(result) == 1
+        assert isinstance(result[0], TextContent)
+        assert "Error" in result[0].text
+
+    @pytest.mark.asyncio
+    async def test_call_tool_convert_to_pdf_wrong_extension(self):
+        """Test convert_to_pdf with a non-Markdown file extension."""
+        from flexberry_markitdown_mcp.server import call_tool
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            txt_file = Path(tmpdir) / "test.txt"
+            txt_file.write_text("Not markdown", encoding="utf-8")
+
+            result = await call_tool("convert_to_pdf", {
+                "file_path": str(txt_file),
+                "backend": "weasyprint",
+            })
+            assert isinstance(result, list)
+            assert len(result) == 1
+            assert isinstance(result[0], TextContent)
+            assert "Error" in result[0].text
+            assert ".txt" in result[0].text
+
+    @pytest.mark.asyncio
+    async def test_call_tool_convert_to_pdf_unicode_filename(self):
+        """Test convert_to_pdf with Cyrillic filename."""
+        from flexberry_markitdown_mcp.server import call_tool
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            md_file = Path(tmpdir) / "документ.md"
+            md_file.write_text("# Тест\n\nСодержание.", encoding="utf-8")
+
+            result = await call_tool("convert_to_pdf", {
+                "file_path": str(md_file),
+                "backend": "weasyprint",
+            })
+            assert isinstance(result, list)
+            assert len(result) == 1
+            assert isinstance(result[0], TextContent)
+            assert "PDF conversion successful" in result[0].text
+
+    @pytest.mark.asyncio
+    async def test_call_tool_convert_to_pdf_overwrite(self):
+        """Test convert_to_pdf with overwrite flag when output already exists."""
+        from flexberry_markitdown_mcp.server import call_tool
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            md_file = Path(tmpdir) / "doc.md"
+            md_file.write_text("# Overwrite Test\n\nContent.", encoding="utf-8")
+            output_path = Path(tmpdir) / "doc.pdf"
+
+            # First conversion
+            await call_tool("convert_to_pdf", {
+                "file_path": str(md_file),
+                "output_path": str(output_path),
+                "backend": "weasyprint",
+                "overwrite": True,
+            })
+            first_size = output_path.stat().st_size
+            assert first_size > 0
+
+            # Second conversion with overwrite=True
+            result = await call_tool("convert_to_pdf", {
+                "file_path": str(md_file),
+                "output_path": str(output_path),
+                "backend": "weasyprint",
+                "overwrite": True,
+            })
+            assert "PDF conversion successful" in result[0].text
+            assert output_path.exists()

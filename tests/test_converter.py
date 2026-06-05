@@ -5,6 +5,18 @@ from pathlib import Path
 
 import pytest
 
+try:
+    from playwright.sync_api import sync_playwright
+
+    _has_playwright = True
+except ImportError:
+    _has_playwright = False
+
+_skip_no_playwright = pytest.mark.skipif(
+    not _has_playwright,
+    reason="Playwright not installed; run: pip install playwright && playwright install chromium",
+)
+
 from flexberry_markitdown_mcp.converter import (
     build_html_document,
     convert_md_file_to_pdf,
@@ -149,3 +161,63 @@ class TestConvertMdFileToPdf:
         import inspect
         sig = inspect.signature(convert_md_file_to_pdf)
         assert sig.parameters["backend"].default == "playwright"
+
+
+# ---------------------------------------------------------------------------
+# convert_md_to_pdf (Playwright — requires Chromium)
+# ---------------------------------------------------------------------------
+
+
+@_skip_no_playwright
+class TestConvertMdToPdfPlaywright:
+    """Tests for the Playwright (headless Chromium) PDF backend."""
+
+    def test_basic_pdf_generation(self, tmp_path):
+        """Full pipeline: MD string to PDF via Playwright."""
+        md_text = "# Hello, Playwright!\n\nThis is a test document."
+        output = tmp_path / "test.pdf"
+        convert_md_to_pdf(md_text, output, backend="playwright")
+        assert output.exists()
+        assert output.stat().st_size > 0
+
+    def test_pdf_with_table(self, tmp_path):
+        """Table rendering through the browser engine."""
+        md_text = "# Table Test\n\n| A | B |\n|---|---|\n| 1 | 2 |\n| 3 | 4 |"
+        output = tmp_path / "table.pdf"
+        convert_md_to_pdf(md_text, output, backend="playwright")
+        assert output.exists()
+        assert output.stat().st_size > 0
+
+    def test_pdf_with_code_block(self, tmp_path):
+        """Code block with syntax highlighting through Playwright."""
+        md_text = "# Code\n\n```python\ndef hello():\n    print('Hello!')\n```"
+        output = tmp_path / "code.pdf"
+        convert_md_to_pdf(md_text, output, backend="playwright")
+        assert output.exists()
+        assert output.stat().st_size > 0
+
+    def test_cyrillic_content(self, tmp_path):
+        """Unicode/Cyrillic content through the browser rendering path."""
+        md_text = "# Привет, мир!\n\nЭто тестовый документ на русском языке."
+        output = tmp_path / "cyrillic.pdf"
+        convert_md_to_pdf(md_text, output, backend="playwright")
+        assert output.exists()
+        assert output.stat().st_size > 0
+
+    def test_from_file(self, tmp_path):
+        """File-based conversion via Playwright backend."""
+        md_file = tmp_path / "doc.md"
+        md_file.write_text("# File Test\n\nFrom a file via Playwright.", encoding="utf-8")
+        output = tmp_path / "doc.pdf"
+        convert_md_file_to_pdf(md_file, output, backend="playwright")
+        assert output.exists()
+        assert output.stat().st_size > 0
+
+    def test_auto_output_path(self, tmp_path):
+        """Auto-generated output path (same dir, .pdf extension) via Playwright."""
+        md_file = tmp_path / "auto.md"
+        md_file.write_text("# Auto Path\n\nTest.", encoding="utf-8")
+        result = convert_md_file_to_pdf(md_file, backend="playwright")
+        assert result.exists()
+        assert result.suffix == ".pdf"
+        assert result.stem == "auto"
