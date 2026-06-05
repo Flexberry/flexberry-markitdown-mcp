@@ -15,12 +15,10 @@ def get_pygments_css() -> str:
         from pygments.formatters import HtmlFormatter
 
         formatter = HtmlFormatter(cssclass="highlight")
-        return (
-            "/* Syntax highlighting (auto-generated from Pygments) */\n"
-            + formatter.get_style_defs(".highlight")
-        )
+        return "/* Syntax highlighting (auto-generated from Pygments) */\n" + formatter.get_style_defs(".highlight")
     except ImportError:
         return ""
+
 
 DEFAULT_PDF_STYLES = """
 /* ===== Base Typography ===== */

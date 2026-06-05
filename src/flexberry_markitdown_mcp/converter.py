@@ -9,11 +9,17 @@ Optional backend: WeasyPrint — pure-Python, no browser required (no JS renderi
 Pipeline: MD → HTML (via markdown-it-py) → full HTML doc → PDF
 """
 
+from __future__ import annotations
+
 import logging
 import subprocess
 import sys
 import tempfile
 from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from markdown_it import MarkdownIt
 
 from .styles import DEFAULT_PDF_STYLES, get_pygments_css
 
@@ -26,6 +32,7 @@ _chromium_ensured = False
 # ---------------------------------------------------------------------------
 # Chromium auto-install (mirrors vscode-markdown-pdf behavior)
 # ---------------------------------------------------------------------------
+
 
 def ensure_chromium() -> None:
     """
@@ -54,11 +61,10 @@ def ensure_chromium() -> None:
                 logger.info("Chromium not found, auto-installing (one-time setup)...")
                 _install_chromium()
 
-    except ImportError:
+    except ImportError as err:
         raise ImportError(
-            "playwright is required for PDF generation. "
-            "Install with: pip install flexberry-markitdown-mcp"
-        )
+            "playwright is required for PDF generation. Install with: pip install flexberry-markitdown-mcp"
+        ) from err
 
     _chromium_ensured = True
 
@@ -81,16 +87,14 @@ def _install_chromium() -> None:
                 f"Try manually: playwright install chromium"
             )
         logger.info("Chromium installed successfully")
-    except subprocess.TimeoutExpired:
-        raise RuntimeError(
-            "Chromium download timed out (5 min). "
-            "Try manually: playwright install chromium"
-        )
+    except subprocess.TimeoutExpired as err:
+        raise RuntimeError("Chromium download timed out (5 min). Try manually: playwright install chromium") from err
 
 
 # ---------------------------------------------------------------------------
 # Markdown → HTML
 # ---------------------------------------------------------------------------
+
 
 def markdown_to_html(
     md_text: str,
@@ -120,11 +124,10 @@ def markdown_to_html(
     """
     try:
         from markdown_it import MarkdownIt
-    except ImportError:
+    except ImportError as err:
         raise ImportError(
-            "markdown-it-py is required for MD→PDF conversion. "
-            "Install it with: pip install markdown-it-py"
-        )
+            "markdown-it-py is required for MD→PDF conversion. Install it with: pip install markdown-it-py"
+        ) from err
 
     # Start with commonmark preset and enable GFM extras (built-in rules)
     built_in_rules = []
@@ -139,6 +142,7 @@ def markdown_to_html(
     if enable_tasklists:
         try:
             from mdit_py_plugins.tasklists import tasklists_plugin
+
             md.use(tasklists_plugin)
         except ImportError:
             logger.debug("mdit-py-plugins not installed, task lists disabled")
@@ -146,6 +150,7 @@ def markdown_to_html(
     if enable_frontmatter:
         try:
             from mdit_py_plugins.front_matter import front_matter_plugin
+
             md.use(front_matter_plugin)
         except ImportError:
             logger.debug("mdit-py-plugins not installed, front matter disabled")
@@ -160,12 +165,12 @@ def markdown_to_html(
     return html_body
 
 
-def _enable_highlighting(md: "MarkdownIt") -> "MarkdownIt":
+def _enable_highlighting(md: MarkdownIt) -> MarkdownIt:
     """Add Pygments-based syntax highlighting to the markdown-it instance."""
     try:
         from pygments import highlight
         from pygments.formatters import HtmlFormatter
-        from pygments.lexers import get_lexer_by_name, guess_lexer, ClassNotFound
+        from pygments.lexers import ClassNotFound, get_lexer_by_name, guess_lexer
 
         def highlight_code(code: str, lang: str, *args) -> str:
             if lang:
@@ -244,6 +249,7 @@ def build_html_document(
 # HTML → PDF  (Playwright backend — DEFAULT)
 # ---------------------------------------------------------------------------
 
+
 def html_to_pdf_playwright(
     html: str,
     output_path: Path,
@@ -286,9 +292,7 @@ def html_to_pdf_playwright(
 
     # Write HTML to temp file so that file:// URLs work correctly
     # (same approach as vscode-markdown-pdf: write tmp HTML, load via file://)
-    with tempfile.NamedTemporaryFile(
-        suffix=".html", mode="w", encoding="utf-8", delete=False
-    ) as tmp:
+    with tempfile.NamedTemporaryFile(suffix=".html", mode="w", encoding="utf-8", delete=False) as tmp:
         tmp.write(html)
         tmp_path = Path(tmp.name)
 
@@ -323,6 +327,7 @@ def html_to_pdf_playwright(
 # HTML → PDF  (WeasyPrint backend — OPTIONAL)
 # ---------------------------------------------------------------------------
 
+
 def html_to_pdf_weasyprint(
     html: str,
     output_path: Path,
@@ -344,15 +349,12 @@ def html_to_pdf_weasyprint(
     """
     try:
         from weasyprint import HTML
-    except ImportError:
+    except ImportError as err:
         raise ImportError(
-            "weasyprint is not installed. Install with: "
-            "pip install flexberry-markitdown-mcp[weasyprint]"
-        )
+            "weasyprint is not installed. Install with: pip install flexberry-markitdown-mcp[weasyprint]"
+        ) from err
 
-    with tempfile.NamedTemporaryFile(
-        suffix=".html", mode="w", encoding="utf-8", delete=False
-    ) as tmp:
+    with tempfile.NamedTemporaryFile(suffix=".html", mode="w", encoding="utf-8", delete=False) as tmp:
         tmp.write(html)
         tmp_path = Path(tmp.name)
 
@@ -377,8 +379,7 @@ DEFAULT_FOOTER_TEMPLATE = (
 )
 
 DEFAULT_HEADER_TEMPLATE = (
-    '<div style="font-size: 9px; margin-left: 1cm; width: 100%;">'
-    '<span class="title"></span></div>'
+    '<div style="font-size: 9px; margin-left: 1cm; width: 100%;"><span class="title"></span></div>'
 )
 
 
@@ -470,10 +471,7 @@ def convert_md_to_pdf(
             output_path=output_path,
         )
     else:
-        raise ValueError(
-            f"Unknown PDF backend: {backend!r}. "
-            f"Supported backends: 'playwright' (default), 'weasyprint'"
-        )
+        raise ValueError(f"Unknown PDF backend: {backend!r}. Supported backends: 'playwright' (default), 'weasyprint'")
 
     logger.info(f"PDF generated: {output_path} ({output_path.stat().st_size:,} bytes)")
     return output_path

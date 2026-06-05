@@ -114,12 +114,14 @@ _WEASYPRINT_AVAILABLE = False
 
 try:
     import playwright  # noqa: F401
+
     _PLAYWRIGHT_AVAILABLE = True
 except ImportError:
     pass
 
 try:
     import weasyprint  # noqa: F401
+
     _WEASYPRINT_AVAILABLE = True
 except ImportError:
     pass
@@ -155,9 +157,7 @@ def get_pdf_backend_description() -> str:
             "(Mermaid diagrams, PlantUML, etc.). Chromium is auto-downloaded on first use."
         )
     else:
-        lines.append(
-            "- playwright: NOT INSTALLED. Install with: pip install flexberry-markitdown-mcp"
-        )
+        lines.append("- playwright: NOT INSTALLED. Install with: pip install flexberry-markitdown-mcp")
 
     if _WEASYPRINT_AVAILABLE:
         lines.append(
@@ -165,9 +165,7 @@ def get_pdf_backend_description() -> str:
             "Does NOT support JS-rendered content. Good lightweight alternative."
         )
     else:
-        lines.append(
-            "- weasyprint: NOT INSTALLED. Install with: pip install flexberry-markitdown-mcp[weasyprint]"
-        )
+        lines.append("- weasyprint: NOT INSTALLED. Install with: pip install flexberry-markitdown-mcp[weasyprint]")
 
     lines.append("Current default backend: playwright")
     return "\n".join(lines)
@@ -277,7 +275,8 @@ async def list_tools() -> list[Tool]:
                 "- Uses atomic write pattern (temp file + rename) for safety\n"
                 "- Auto-unique filenames if target exists (adds (1), (2), etc.)\n"
                 "- Supports overwrite flag to replace existing files\n\n"
-            ) + get_supported_extensions_description(),
+            )
+            + get_supported_extensions_description(),
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -298,7 +297,6 @@ async def list_tools() -> list[Tool]:
                 "required": ["file_path"],
             },
         ),
-
         # ── convert_to_pdf ──────────────────────────────────────────────
         Tool(
             name="convert_to_pdf",
@@ -317,7 +315,8 @@ async def list_tools() -> list[Tool]:
                 "- Configurable page format (A4, Letter, etc.) and margins\n"
                 "- Custom CSS injection\n"
                 "- Header/footer with page numbers\n\n"
-            ) + get_pdf_backend_description(),
+            )
+            + get_pdf_backend_description(),
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -388,7 +387,6 @@ async def list_tools() -> list[Tool]:
                 "required": ["file_path"],
             },
         ),
-
         # ── get_supported_formats ────────────────────────────────────────
         Tool(
             name="get_supported_formats",
@@ -398,7 +396,6 @@ async def list_tools() -> list[Tool]:
                 "properties": {},
             },
         ),
-
         # ── check_file_exists ────────────────────────────────────────────
         Tool(
             name="check_file_exists",
@@ -414,7 +411,6 @@ async def list_tools() -> list[Tool]:
                 "required": ["file_path"],
             },
         ),
-
         # ── list_directory ───────────────────────────────────────────────
         Tool(
             name="list_directory",
@@ -452,9 +448,7 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
         return [
             TextContent(
                 type="text",
-                text=get_supported_extensions_description()
-                + "\n\n"
-                + get_pdf_backend_description(),
+                text=get_supported_extensions_description() + "\n\n" + get_pdf_backend_description(),
             )
         ]
 
@@ -637,10 +631,7 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
                 return [
                     TextContent(
                         type="text",
-                        text=(
-                            f"Error: convert_to_pdf only supports Markdown files (.md, .markdown). "
-                            f"Got: '{ext}'"
-                        ),
+                        text=(f"Error: convert_to_pdf only supports Markdown files (.md, .markdown). Got: '{ext}'"),
                     )
                 ]
 
@@ -653,9 +644,7 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
                 output_path = make_unique_path(output_path)
 
             input_size = input_path.stat().st_size
-            logger.info(
-                f"Converting MD to PDF: {input_path} -> {output_path} (backend={backend})"
-            )
+            logger.info(f"Converting MD to PDF: {input_path} -> {output_path} (backend={backend})")
 
             # Import the converter lazily so that the server can start even
             # if only one backend is installed
@@ -715,9 +704,7 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
                 TextContent(
                     type="text",
                     text=(
-                        f"Error: Missing dependency for PDF conversion.\n"
-                        f"{str(e)}\n\n"
-                        f"{get_pdf_backend_description()}"
+                        f"Error: Missing dependency for PDF conversion.\n{str(e)}\n\n{get_pdf_backend_description()}"
                     ),
                 )
             ]

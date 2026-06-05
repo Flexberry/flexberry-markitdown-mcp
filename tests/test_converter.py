@@ -1,21 +1,8 @@
 """Tests for the MD→PDF converter module."""
 
-import tempfile
-from pathlib import Path
+import importlib.util
 
 import pytest
-
-try:
-    from playwright.sync_api import sync_playwright
-
-    _has_playwright = True
-except ImportError:
-    _has_playwright = False
-
-_skip_no_playwright = pytest.mark.skipif(
-    not _has_playwright,
-    reason="Playwright not installed; run: pip install playwright && playwright install chromium",
-)
 
 from flexberry_markitdown_mcp.converter import (
     build_html_document,
@@ -24,10 +11,17 @@ from flexberry_markitdown_mcp.converter import (
     markdown_to_html,
 )
 
+_has_playwright = importlib.util.find_spec("playwright") is not None
+
+_skip_no_playwright = pytest.mark.skipif(
+    not _has_playwright,
+    reason="Playwright not installed; run: pip install playwright && playwright install chromium",
+)
 
 # ---------------------------------------------------------------------------
 # markdown_to_html
 # ---------------------------------------------------------------------------
+
 
 class TestMarkdownToHtml:
     def test_basic_paragraph(self):
@@ -73,6 +67,7 @@ class TestMarkdownToHtml:
 # build_html_document
 # ---------------------------------------------------------------------------
 
+
 class TestBuildHtmlDocument:
     def test_basic(self):
         html = build_html_document("<p>Hello</p>", title="Test")
@@ -92,6 +87,7 @@ class TestBuildHtmlDocument:
 # ---------------------------------------------------------------------------
 # convert_md_to_pdf (WeasyPrint — used in CI without browser)
 # ---------------------------------------------------------------------------
+
 
 class TestConvertMdToPdfWeasyprint:
     def test_basic_pdf_generation(self, tmp_path):
@@ -128,6 +124,7 @@ class TestConvertMdToPdfWeasyprint:
     def test_default_backend_is_playwright(self):
         """Verify that the default backend argument is 'playwright'."""
         import inspect
+
         sig = inspect.signature(convert_md_to_pdf)
         assert sig.parameters["backend"].default == "playwright"
 
@@ -135,6 +132,7 @@ class TestConvertMdToPdfWeasyprint:
 # ---------------------------------------------------------------------------
 # convert_md_file_to_pdf
 # ---------------------------------------------------------------------------
+
 
 class TestConvertMdFileToPdf:
     def test_from_file(self, tmp_path):
@@ -159,6 +157,7 @@ class TestConvertMdFileToPdf:
     def test_default_backend_is_playwright(self):
         """Verify that the default backend argument is 'playwright'."""
         import inspect
+
         sig = inspect.signature(convert_md_file_to_pdf)
         assert sig.parameters["backend"].default == "playwright"
 

@@ -1,10 +1,9 @@
 """Tests for server module functions."""
 
-import asyncio
 import sys
 import tempfile
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 from mcp.types import TextContent
@@ -316,10 +315,13 @@ class TestServerTools:
             md_file = Path(tmpdir) / "test.md"
             md_file.write_text("# Hello PDF\n\nThis is a test.", encoding="utf-8")
 
-            result = await call_tool("convert_to_pdf", {
-                "file_path": str(md_file),
-                "backend": "weasyprint",
-            })
+            result = await call_tool(
+                "convert_to_pdf",
+                {
+                    "file_path": str(md_file),
+                    "backend": "weasyprint",
+                },
+            )
             assert isinstance(result, list)
             assert len(result) == 1
             assert isinstance(result[0], TextContent)
@@ -339,11 +341,14 @@ class TestServerTools:
             md_file.write_text("# Custom Output\n\nTest.", encoding="utf-8")
             output_path = str(Path(tmpdir) / "custom.pdf")
 
-            result = await call_tool("convert_to_pdf", {
-                "file_path": str(md_file),
-                "output_path": output_path,
-                "backend": "weasyprint",
-            })
+            result = await call_tool(
+                "convert_to_pdf",
+                {
+                    "file_path": str(md_file),
+                    "output_path": output_path,
+                    "backend": "weasyprint",
+                },
+            )
             assert isinstance(result, list)
             assert len(result) == 1
             assert isinstance(result[0], TextContent)
@@ -367,10 +372,13 @@ class TestServerTools:
         """Test convert_to_pdf with a file that does not exist."""
         from flexberry_markitdown_mcp.server import call_tool
 
-        result = await call_tool("convert_to_pdf", {
-            "file_path": "/nonexistent/file.md",
-            "backend": "weasyprint",
-        })
+        result = await call_tool(
+            "convert_to_pdf",
+            {
+                "file_path": "/nonexistent/file.md",
+                "backend": "weasyprint",
+            },
+        )
         assert isinstance(result, list)
         assert len(result) == 1
         assert isinstance(result[0], TextContent)
@@ -385,10 +393,13 @@ class TestServerTools:
             txt_file = Path(tmpdir) / "test.txt"
             txt_file.write_text("Not markdown", encoding="utf-8")
 
-            result = await call_tool("convert_to_pdf", {
-                "file_path": str(txt_file),
-                "backend": "weasyprint",
-            })
+            result = await call_tool(
+                "convert_to_pdf",
+                {
+                    "file_path": str(txt_file),
+                    "backend": "weasyprint",
+                },
+            )
             assert isinstance(result, list)
             assert len(result) == 1
             assert isinstance(result[0], TextContent)
@@ -404,10 +415,13 @@ class TestServerTools:
             md_file = Path(tmpdir) / "документ.md"
             md_file.write_text("# Тест\n\nСодержание.", encoding="utf-8")
 
-            result = await call_tool("convert_to_pdf", {
-                "file_path": str(md_file),
-                "backend": "weasyprint",
-            })
+            result = await call_tool(
+                "convert_to_pdf",
+                {
+                    "file_path": str(md_file),
+                    "backend": "weasyprint",
+                },
+            )
             assert isinstance(result, list)
             assert len(result) == 1
             assert isinstance(result[0], TextContent)
@@ -424,21 +438,27 @@ class TestServerTools:
             output_path = Path(tmpdir) / "doc.pdf"
 
             # First conversion
-            await call_tool("convert_to_pdf", {
-                "file_path": str(md_file),
-                "output_path": str(output_path),
-                "backend": "weasyprint",
-                "overwrite": True,
-            })
+            await call_tool(
+                "convert_to_pdf",
+                {
+                    "file_path": str(md_file),
+                    "output_path": str(output_path),
+                    "backend": "weasyprint",
+                    "overwrite": True,
+                },
+            )
             first_size = output_path.stat().st_size
             assert first_size > 0
 
             # Second conversion with overwrite=True
-            result = await call_tool("convert_to_pdf", {
-                "file_path": str(md_file),
-                "output_path": str(output_path),
-                "backend": "weasyprint",
-                "overwrite": True,
-            })
+            result = await call_tool(
+                "convert_to_pdf",
+                {
+                    "file_path": str(md_file),
+                    "output_path": str(output_path),
+                    "backend": "weasyprint",
+                    "overwrite": True,
+                },
+            )
             assert "PDF conversion successful" in result[0].text
             assert output_path.exists()
