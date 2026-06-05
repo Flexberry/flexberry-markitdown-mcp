@@ -4,108 +4,56 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![PyPI version](https://img.shields.io/pypi/v/flexberry-markitdown-mcp)](https://pypi.org/project/flexberry-markitdown-mcp/)
 
-MCP server for converting files to Markdown using MarkItDown library by Microsoft.
+MCP server for bidirectional document conversion:
 
-## Features
+- **Any format → Markdown** (via Microsoft MarkItDown)
+- **Markdown → PDF** (via Playwright / headless Chromium — same approach as vscode-markdown-pdf)
 
-- 🔄 **File conversion** of various formats to Markdown
-- 📁 **Large files** - result is saved to disk, not loaded into LLM context
-- 🌍 **Cyrillic support** in documents and filenames
-- 💻 **Cross-platform** - Windows and Linux
-- 🔧 **Integration with RooCode** via Model Context Protocol
+Powered by:
 
-## Supported Formats
+- [Microsoft MarkItDown](https://github.com/microsoft/markitdown) — any-format to Markdown conversion
+- Approach from [vscode-markdown-pdf](https://github.com/showzs/vscode-markdown-pdf) — PDF generation via headless Chromium
 
-| Category | Formats |
-|----------|---------|
-| Documents | PDF, DOCX, DOC, PPTX, PPT, XLSX, XLS |
-| Web | HTML, HTM, XML, URL |
-| Data | CSV, JSON |
-| Text | MD, RST, TXT |
-| Images (OCR) | PNG, JPG, JPEG, GIF, BMP, TIFF, WEBP |
-| Audio (transcription) | MP3, WAV, M4A, OGG, FLAC |
-| Archives | ZIP |
-| E-books | EPUB |
-
-> ⚠️ For OCR images, Tesseract is required. For audio transcription, system support is needed.
-
-## Installation
-
-### Option 1: Install from PyPI (recommended)
+## Installation — one command
 
 ```bash
-# Install via pip
 pip install flexberry-markitdown-mcp
+```
 
-# Install with development dependencies
+That's it! On first `convert_to_pdf` call, Chromium is auto-downloaded (same as vscode-markdown-pdf).
+
+### Optional extras
+
+```bash
+# Lightweight backend without browser (no JS rendering)
+pip install flexberry-markitdown-mcp[weasyprint]
+
+# For development
 pip install flexberry-markitdown-mcp[dev]
 ```
 
-### Option 2: Install from source
+## Features
 
-```bash
-# Clone the repository
-git clone https://github.com/Flexberry/flexberry-markitdown-mcp.git
-cd flexberry-markitdown-mcp
+### Convert to Markdown (`convert_to_markdown`)
 
-# Create virtual environment (optional but recommended)
-python -m venv .venv
+- 30+ formats: PDF, DOCX, PPTX, XLSX, HTML, images (OCR), audio (transcription), EPUB, ZIP...
+- Cyrillic filename and content support
+- Atomic writes (temp file + rename)
 
-# Activate virtual environment
-# Linux/macOS:
-source .venv/bin/activate
-# Windows:
-.venv\Scripts\activate
+### Convert to PDF (`convert_to_pdf`)
 
-# Install dependencies
-pip install -e .
-```
+- **Playwright** (default) — headless Chromium, same as vscode-markdown-pdf
+  - Chromium auto-downloaded on first use
+  - Supports JavaScript-rendered content (Mermaid, PlantUML, etc.)
+  - Headers/footers with page numbers
+- **WeasyPrint** (optional) — pure Python, no browser required
+- GitHub-flavored styling (tables, code, blockquotes)
+- Syntax highlighting via Pygments
+- Configurable page format, margins, custom CSS
 
-### Option 3: Use installation scripts
+## MCP Client Configuration
 
-#### Linux/macOS:
-```bash
-chmod +x install.sh
-./install.sh
-```
-
-#### Windows:
-```cmd
-install.bat
-```
-
-## RooCode Configuration
-
-### Windows Configuration
-
-Add to RooCode settings (`mcp_settings.json` or via interface):
-
-```json
-{
-  "mcpServers": {
-    "flexberry-markitdown": {
-      "command": "python",
-      "args": ["-m", "flexberry_markitdown_mcp.server"]
-    }
-  }
-}
-```
-
-Or with virtual environment:
-
-```json
-{
-  "mcpServers": {
-    "flexberry-markitdown": {
-      "command": "C:\\path\\to\\flexberry-markitdown-mcp\\.venv\\Scripts\\python.exe",
-      "args": ["-m", "flexberry_markitdown_mcp.server"],
-      "cwd": "C:\\path\\to\\flexberry-markitdown-mcp"
-    }
-  }
-}
-```
-
-### Linux Configuration
+### Claude Desktop / RooCode / Cursor
 
 ```json
 {
@@ -118,23 +66,7 @@ Or with virtual environment:
 }
 ```
 
-Or with virtual environment:
-
-```json
-{
-  "mcpServers": {
-    "flexberry-markitdown": {
-      "command": "/home/user/flexberry-markitdown-mcp/.venv/bin/python",
-      "args": ["-m", "flexberry_markitdown_mcp.server"],
-      "cwd": "/home/user/flexberry-markitdown-mcp"
-    }
-  }
-}
-```
-
-### Universal Configuration (via uv)
-
-If using [uv](https://github.com/astral-sh/uv):
+### Via uv
 
 ```json
 {
@@ -142,75 +74,107 @@ If using [uv](https://github.com/astral-sh/uv):
     "flexberry-markitdown": {
       "command": "uv",
       "args": [
-        "--directory",
-        "/path/to/flexberry-markitdown-mcp",
-        "run",
-        "flexberry-markitdown-mcp"
+        "--directory", "/path/to/flexberry-markitdown-mcp",
+        "run", "flexberry-markitdown-mcp"
       ]
     }
   }
 }
 ```
 
-## Available Tools
+## Tools
 
 ### `convert_to_markdown`
 
-Converts a file to Markdown and saves the result next to the original file.
+Converts a file of any supported format to Markdown.
 
-**Parameters:**
-- `file_path` (required) - path to the file for conversion
-- `output_path` (optional) - custom path for saving the result
-- `overwrite` (optional, default `false`) - overwrite existing file
+| Parameter     | Type     | Required | Description                            |
+| ------------- | -------- | :------: | -------------------------------------- |
+| `file_path`   | string   |    ✅    | Absolute path to the file              |
+| `output_path` | string   |    ❌    | Custom output path                     |
+| `overwrite`   | boolean  |    ❌    | Overwrite existing (default: false)    |
 
-**Example usage in RooCode:**
-```
-Convert file /home/user/documents/report.pdf to Markdown
-```
+### `convert_to_pdf`
+
+Converts a Markdown file to PDF. Default backend: **Playwright** (same as vscode-markdown-pdf).
+
+| Parameter                 | Type     | Required | Description                                       |
+| ------------------------- | -------- | :------: | ------------------------------------------------- |
+| `file_path`               | string   |    ✅    | Absolute path to the .md file                     |
+| `output_path`             | string   |    ❌    | Custom PDF output path                            |
+| `backend`                 | string   |    ❌    | `"playwright"` (default) or `"weasyprint"`        |
+| `overwrite`               | boolean  |    ❌    | Overwrite existing (default: false)               |
+| `custom_css`              | string   |    ❌    | Additional CSS                                    |
+| `include_default_styles`  | boolean  |    ❌    | Include built-in styles (default: true)           |
+| `format`                  | string   |    ❌    | Paper format: A4, Letter, etc. (default: A4)      |
+| `margin_top`              | string   |    ❌    | Top margin (default: 1.5cm)                       |
+| `margin_bottom`           | string   |    ❌    | Bottom margin (default: 1cm)                      |
+| `margin_left`             | string   |    ❌    | Left margin (default: 1cm)                        |
+| `margin_right`            | string   |    ❌    | Right margin (default: 1cm)                       |
+| `print_background`        | boolean  |    ❌    | Print background (default: true)                  |
+| `display_header_footer`   | boolean  |    ❌    | Header/footer (default: true, Playwright only)    |
 
 ### `get_supported_formats`
 
-Returns a list of supported file formats.
+Returns supported formats and available PDF backends.
 
 ### `check_file_exists`
 
-Checks if a file exists and returns information about it.
+Checks if a file exists and returns its info.
 
-## Usage Examples
+### `list_directory`
 
-### Converting PDF with Cyrillic
+Lists directory contents.
 
+## Architecture
+
+```text
+┌──────────────────────────────────────────────────────┐
+│                   MCP Server (stdio)                  │
+├──────────────────────────────────────────────────────┤
+│                                                       │
+│  convert_to_markdown          convert_to_pdf          │
+│  ┌───────────────┐            ┌──────────────────┐   │
+│  │  MarkItDown   │            │  markdown-it-py  │   │
+│  │  (any→MD)     │            │  (MD→HTML)       │   │
+│  └───────┬───────┘            └────────┬─────────┘   │
+│          │                             │              │
+│          ▼                             ▼              │
+│  ┌───────────────┐            ┌──────────────────┐   │
+│  │  Atomic write │            │  HTML template   │   │
+│  │  (MD to disk) │            │  + GitHub CSS    │   │
+│  └───────────────┘            └────────┬─────────┘   │
+│                                        │              │
+│                              ┌─────────┴──────────┐  │
+│                              ▼                    ▼  │
+│                     ┌──────────────┐  ┌────────────┐ │
+│                     │  Playwright  │  │ WeasyPrint │ │
+│                     │  (DEFAULT)   │  │ (optional) │ │
+│                     │  Chromium    │  │ Pure Python│ │
+│                     │  auto-d/l    │  │ No JS      │ │
+│                     └──────┬───────┘  └─────┬──────┘ │
+│                            ▼                ▼        │
+│                     ┌─────────────────────────────┐  │
+│                     │      PDF saved to disk      │  │
+│                     └─────────────────────────────┘  │
+└──────────────────────────────────────────────────────┘
 ```
-Convert file C:\Documents\Report 2024.pdf to Markdown
-```
 
-Result will be saved to `C:\Documents\Report 2024.md`
+## PDF Backend Comparison
 
-### Converting with overwrite
-
-```
-Convert file /home/user/report.docx with overwrite existing
-```
-
-### Converting to specified location
-
-```
-Convert presentation.pptx and save result to /tmp/output.md
-```
-
-## Large File Handling
-
-The server is designed to work with files of any size:
-
-1. File is converted via MarkItDown
-2. Result is saved to disk next to the original file
-3. Only information about path and size is returned to LLM context
-
-This allows working with files that are 100x larger than LLM context limit.
+| Feature         | Playwright (default)                   | WeasyPrint (optional)           |
+| --------------- | -------------------------------------- | ------------------------------- |
+| Install         | Auto with `pip install`                | `pip install ...[weasyprint]`   |
+| Chromium        | Auto-download on first use             | Not needed                      |
+| JavaScript      | ✅ Full support                        | ❌                              |
+| Mermaid/PlantUML| ✅                                     | ❌                              |
+| Headers/footers | ✅ Page numbers                        | Via CSS @page                   |
+| Recommendation  | All documents                          | Lightweight fallback            |
 
 ## Logging
 
 Server logs are saved to:
+
 - Linux: `~/.flexberry-markitdown-mcp/server.log`
 - Windows: `C:\Users\<user>\.flexberry-markitdown-mcp\server.log`
 
@@ -235,16 +199,24 @@ Ensure UTF-8 encoding in terminal. Server automatically sets UTF-8 for stdin/std
 ### OCR not working for images
 
 Install Tesseract:
-- Windows: download from https://github.com/UB-Mannheim/tesseract/wiki
+
+- Windows: download from <https://github.com/UB-Mannheim/tesseract/wiki>
 - Linux: `sudo apt install tesseract-ocr` (Ubuntu/Debian)
 
 For Russian language, install language pack:
+
 - Windows: select Russian language during installation
 - Linux: `sudo apt install tesseract-ocr-rus`
 
 ### Audio transcription not working
 
 MarkItDown uses Azure Speech Services for transcription. Ensure environment variables are configured.
+
+### Chromium does not auto-download
+
+```bash
+playwright install chromium
+```
 
 ## Development
 
@@ -257,25 +229,20 @@ pytest
 
 ### Project structure
 
-```
+```text
 flexberry-markitdown-mcp/
 ├── src/
 │   └── flexberry_markitdown_mcp/
 │       ├── __init__.py
-│       └── server.py
+│       ├── converter.py     # MD → PDF conversion
+│       ├── server.py        # MCP server
+│       └── styles.py        # CSS styles for PDF
+├── tests/
+│   └── test_converter.py
 ├── pyproject.toml
-├── README_EN.md
-├── install.sh
-├── install.bat
-├── uninstall.sh
-├── uninstall.bat
-└── roocode-config-examples.json
+└── README.md
 ```
 
 ## License
 
-MIT License
-
----
-
-Developed by [Flexberry](https://github.com/Flexberry) team.
+MIT

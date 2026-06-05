@@ -4,108 +4,56 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![PyPI version](https://img.shields.io/pypi/v/flexberry-markitdown-mcp)](https://pypi.org/project/flexberry-markitdown-mcp/)
 
-MCP сервер для конвертации файлов в Markdown с использованием библиотеки MarkItDown от Microsoft.
+MCP-сервер для двунаправленной конвертации документов:
 
-## Особенности
+- **Любой формат → Markdown** (через Microsoft MarkItDown)
+- **Markdown → PDF** (через Playwright / headless Chromium — подход из vscode-markdown-pdf)
 
-- 🔄 **Конвертация файлов** различных форматов в Markdown
-- 📁 **Большие файлы** — результат сохраняется на диск, не загружается в контекст LLM
-- 🌍 **Поддержка кириллицы** в документах и именах файлов
-- 💻 **Кроссплатформенность** — Windows и Linux
-- 🔧 **Интеграция с RooCode** через Model Context Protocol
+Использует:
 
-## Поддерживаемые форматы
+- [Microsoft MarkItDown](https://github.com/microsoft/markitdown) — конвертация любых форматов в Markdown
+- Подход [vscode-markdown-pdf](https://github.com/showzs/vscode-markdown-pdf) — генерация PDF через headless Chromium
 
-| Категория | Форматы |
-|-----------|---------|
-| Документы | PDF, DOCX, DOC, PPTX, PPT, XLSX, XLS |
-| Веб | HTML, HTM, XML, URL |
-| Данные | CSV, JSON |
-| Текст | MD, RST, TXT |
-| Изображения (OCR) | PNG, JPG, JPEG, GIF, BMP, TIFF, WEBP |
-| Аудио (транскрипция) | MP3, WAV, M4A, OGG, FLAC |
-| Архивы | ZIP |
-| Электронные книги | EPUB |
-
-> ⚠️ Для OCR изображений требуется установка Tesseract. Для транскрипции аудио требуется поддержка в системе.
-
-## Установка
-
-### Вариант 1: Установка из PyPI (рекомендуется)
+## Установка — одна команда
 
 ```bash
-# Установка через pip
 pip install flexberry-markitdown-mcp
+```
 
-# Установка с зависимостями для разработки
+Всё! При первом вызове `convert_to_pdf` Chromium скачается автоматически (как в vscode-markdown-pdf).
+
+### Дополнительные опции
+
+```bash
+# Легковесный бэкенд без браузера (не поддерживает JS-рендеринг)
+pip install flexberry-markitdown-mcp[weasyprint]
+
+# Для разработки
 pip install flexberry-markitdown-mcp[dev]
 ```
 
-### Вариант 2: Установка из исходного кода
+## Возможности
 
-```bash
-# Клонируйте репозиторий
-git clone https://github.com/Flexberry/flexberry-markitdown-mcp.git
-cd flexberry-markitdown-mcp
+### Конвертация в Markdown (`convert_to_markdown`)
 
-# Создайте виртуальное окружение (опционально, но рекомендуется)
-python -m venv .venv
+- 30+ форматов: PDF, DOCX, PPTX, XLSX, HTML, изображения (OCR), аудио (транскрипция), EPUB, ZIP...
+- Поддержка кириллицы в именах файлов и содержимом
+- Атомарная запись (временный файл + переименование)
 
-# Активируйте виртуальное окружение
-# Linux/macOS:
-source .venv/bin/activate
-# Windows:
-.venv\Scripts\activate
+### Конвертация в PDF (`convert_to_pdf`)
 
-# Установите зависимости
-pip install -e .
-```
+- **Playwright** (по умолчанию) — headless Chromium, как в vscode-markdown-pdf
+  - Chromium скачивается автоматически при первом использовании
+  - Поддержка JavaScript-рендеринга (Mermaid, PlantUML и т.д.)
+  - Колонтитулы с номерами страниц
+- **WeasyPrint** (опционально) — чистый Python, без браузера
+- GitHub-стиль оформления (таблицы, код, блок-схемы)
+- Подсветка синтаксиса через Pygments
+- Настраиваемый формат страницы, поля, CSS
 
-### Вариант 3: Использование установочного скрипта
+## Настройка MCP-клиента
 
-#### Linux/macOS:
-```bash
-chmod +x install.sh
-./install.sh
-```
-
-#### Windows:
-```cmd
-install.bat
-```
-
-## Настройка RooCode
-
-### Конфигурация для Windows
-
-Добавьте в настройки RooCode (файл `mcp_settings.json` или через интерфейс):
-
-```json
-{
-  "mcpServers": {
-    "flexberry-markitdown": {
-      "command": "python",
-      "args": ["-m", "flexberry_markitdown_mcp.server"]
-    }
-  }
-}
-```
-
-Или с виртуальным окружением:
-
-```json
-{
-  "mcpServers": {
-    "flexberry-markitdown": {
-      "command": "C:\\path\\to\\flexberry-markitdown-mcp\\.venv\\Scripts\\python.exe",
-      "args": ["-m", "flexberry_markitdown_mcp.server"],
-      "cwd": "C:\\path\\to\\flexberry-markitdown-mcp"
-    }
-  }
-}
-```
-
-### Конфигурация для Linux
+### Claude Desktop / RooCode / Cursor
 
 ```json
 {
@@ -118,23 +66,7 @@ install.bat
 }
 ```
 
-Или с виртуальным окружением:
-
-```json
-{
-  "mcpServers": {
-    "flexberry-markitdown": {
-      "command": "/home/user/flexberry-markitdown-mcp/.venv/bin/python",
-      "args": ["-m", "flexberry_markitdown_mcp.server"],
-      "cwd": "/home/user/flexberry-markitdown-mcp"
-    }
-  }
-}
-```
-
-### Универсальная конфигурация (через uv)
-
-Если используется [uv](https://github.com/astral-sh/uv):
+### Через uv
 
 ```json
 {
@@ -142,75 +74,107 @@ install.bat
     "flexberry-markitdown": {
       "command": "uv",
       "args": [
-        "--directory",
-        "/path/to/flexberry-markitdown-mcp",
-        "run",
-        "flexberry-markitdown-mcp"
+        "--directory", "/path/to/flexberry-markitdown-mcp",
+        "run", "flexberry-markitdown-mcp"
       ]
     }
   }
 }
 ```
 
-## Доступные инструменты
+## Инструменты
 
 ### `convert_to_markdown`
 
-Конвертирует файл в Markdown и сохраняет результат рядом с исходным файлом.
+Конвертирует файл любого поддерживаемого формата в Markdown.
 
-**Параметры:**
-- `file_path` (обязательный) — путь к файлу для конвертации
-- `output_path` (опциональный) — пользовательский путь для сохранения результата
-- `overwrite` (опциональный, по умолчанию `false`) — перезаписать существующий файл
+| Параметр     | Тип     | Обязательный | Описание                                     |
+| ------------ | ------- | :----------: | -------------------------------------------- |
+| `file_path`  | string  |      ✅      | Абсолютный путь к файлу                      |
+| `output_path`| string  |      ❌      | Пользовательский путь вывода                 |
+| `overwrite`  | boolean |      ❌      | Перезаписать существующий (по умолч.: false) |
 
-**Пример использования в RooCode:**
-```
-Convert file /home/user/documents/report.pdf to Markdown
-```
+### `convert_to_pdf`
+
+Конвертирует Markdown-файл в PDF. Бэкенд по умолчанию — **Playwright** (как в vscode-markdown-pdf).
+
+| Параметр                  | Тип     | Обязательный | Описание                                          |
+| ------------------------- | ------- | :----------: | ------------------------------------------------- |
+| `file_path`               | string  |      ✅      | Абсолютный путь к .md файлу                       |
+| `output_path`             | string  |      ❌      | Пользовательский путь вывода PDF                  |
+| `backend`                 | string  |      ❌      | `"playwright"` (по умолч.) или `"weasyprint"`     |
+| `overwrite`               | boolean |      ❌      | Перезаписать существующий (по умолч.: false)      |
+| `custom_css`              | string  |      ❌      | Дополнительный CSS                                |
+| `include_default_styles`  | boolean |      ❌      | Включить встроенные стили (по умолч.: true)       |
+| `format`                  | string  |      ❌      | Формат бумаги: A4, Letter и т.д. (по умолч.: A4)  |
+| `margin_top`              | string  |      ❌      | Верхнее поле (по умолч.: 1.5cm)                   |
+| `margin_bottom`           | string  |      ❌      | Нижнее поле (по умолч.: 1cm)                      |
+| `margin_left`             | string  |      ❌      | Левое поле (по умолч.: 1cm)                       |
+| `margin_right`            | string  |      ❌      | Правое поле (по умолч.: 1cm)                      |
+| `print_background`        | boolean |      ❌      | Печатать фон (по умолч.: true)                    |
+| `display_header_footer`   | boolean |      ❌      | Колонтитулы (по умолч.: true, Playwright)         |
 
 ### `get_supported_formats`
 
-Возвращает список поддерживаемых форматов файлов.
+Список поддерживаемых форматов и доступные PDF-бэкенды.
 
 ### `check_file_exists`
 
-Проверяет существование файла и возвращает информацию о нем.
+Проверяет существование файла и возвращает информацию.
 
-## Примеры использования
+### `list_directory`
 
-### Конвертация PDF с кириллицей
+Показывает содержимое директории.
 
+## Архитектура
+
+```text
+┌──────────────────────────────────────────────────────┐
+│                   MCP Server (stdio)                  │
+├──────────────────────────────────────────────────────┤
+│                                                       │
+│  convert_to_markdown          convert_to_pdf          │
+│  ┌───────────────┐            ┌──────────────────┐   │
+│  │  MarkItDown   │            │  markdown-it-py  │   │
+│  │  (any→MD)     │            │  (MD→HTML)       │   │
+│  └───────┬───────┘            └────────┬─────────┘   │
+│          │                             │              │
+│          ▼                             ▼              │
+│  ┌───────────────┐            ┌──────────────────┐   │
+│  │  Atomic write │            │  HTML template   │   │
+│  │  (MD to disk) │            │  + GitHub CSS    │   │
+│  └───────────────┘            └────────┬─────────┘   │
+│                                        │              │
+│                              ┌─────────┴──────────┐  │
+│                              ▼                    ▼  │
+│                     ┌──────────────┐  ┌────────────┐ │
+│                     │  Playwright  │  │ WeasyPrint │ │
+│                     │  (DEFAULT)   │  │ (optional) │ │
+│                     │  Chromium    │  │ Pure Python│ │
+│                     │  auto-d/l    │  │ No JS      │ │
+│                     └──────┬───────┘  └─────┬──────┘ │
+│                            ▼                ▼        │
+│                     ┌─────────────────────────────┐  │
+│                     │      PDF saved to disk      │  │
+│                     └─────────────────────────────┘  │
+└──────────────────────────────────────────────────────┘
 ```
-Convert file C:\Documents\Report 2024.pdf to Markdown
-```
 
-Результат будет сохранен в `C:\Documents\Report 2024.md`
+## Сравнение бэкендов PDF
 
-### Конвертация с перезаписью
-
-```
-Convert file /home/user/report.docx with overwrite existing
-```
-
-### Конвертация в указанное место
-
-```
-Convert presentation.pptx and save result to /tmp/output.md
-```
-
-## Обработка больших файлов
-
-Сервер разработан для работы с файлами любого размера:
-
-1. Файл конвертируется через MarkItDown
-2. Результат сохраняется на диск рядом с исходным файлом
-3. В контекст LLM возвращается только информация о пути и размере
-
-Это позволяет работать с файлами, которые в 100 раз превышают лимит контекста LLM.
+| Характеристика    | Playwright (по умолч.)                 | WeasyPrint (опционально)        |
+| ----------------- | -------------------------------------- | ------------------------------- |
+| Установка         | Автоматически при `pip install`        | `pip install ...[weasyprint]`   |
+| Chromium          | Автозагрузка при первом запуске        | Не нужен                        |
+| JavaScript        | ✅ Полная поддержка                    | ❌                              |
+| Mermaid/PlantUML  | ✅                                     | ❌                              |
+| Колонтитулы       | ✅ Номера страниц                      | Через CSS @page                 |
+| Рекомендация      | Все документы                          | Легковесный fallback            |
 
 ## Журналирование
 
 Журналы сервера сохраняются в:
+
 - Linux: `~/.flexberry-markitdown-mcp/server.log`
 - Windows: `C:\Users\<user>\.flexberry-markitdown-mcp\server.log`
 
@@ -235,16 +199,24 @@ pip install flexberry-markitdown-mcp
 ### OCR не работает для изображений
 
 Установите Tesseract:
-- Windows: загрузите с https://github.com/UB-Mannheim/tesseract/wiki
+
+- Windows: загрузите с <https://github.com/UB-Mannheim/tesseract/wiki>
 - Linux: `sudo apt install tesseract-ocr` (Ubuntu/Debian)
 
 Для русского языка установите языковой пакет:
+
 - Windows: выберите русский язык во время установки
 - Linux: `sudo apt install tesseract-ocr-rus`
 
 ### Транскрипция аудио не работает
 
 MarkItDown использует Azure Speech Services для транскрипции. Убедитесь, что переменные среды настроены.
+
+### Chromium не скачивается автоматически
+
+```bash
+playwright install chromium
+```
 
 ## Разработка
 
@@ -257,25 +229,20 @@ pytest
 
 ### Структура проекта
 
-```
+```text
 flexberry-markitdown-mcp/
 ├── src/
 │   └── flexberry_markitdown_mcp/
 │       ├── __init__.py
-│       └── server.py
+│       ├── converter.py     # MD → PDF конвертация
+│       ├── server.py        # MCP сервер
+│       └── styles.py        # CSS стили для PDF
+├── tests/
+│   └── test_converter.py
 ├── pyproject.toml
-├── README.md
-├── install.sh
-├── install.bat
-├── uninstall.sh
-├── uninstall.bat
-└── roocode-config-examples.json
+└── README.md
 ```
 
 ## Лицензия
 
-MIT License
-
----
-
-Разработано командой [Flexberry](https://github.com/Flexberry).
+MIT

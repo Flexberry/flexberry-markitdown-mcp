@@ -1,15 +1,22 @@
 #!/usr/bin/env python3
 """
-MCP Server for converting files to Markdown using MarkItDown.
+MCP Server for converting files to Markdown (via MarkItDown) and Markdown to PDF.
 
 Features:
-- Converts various file formats to Markdown
+- Converts various file formats to Markdown using MarkItDown
+- Converts Markdown files to PDF via Playwright (headless Chromium, auto-download)
+- Optional WeasyPrint backend (pure Python, no browser)
 - Supports Cyrillic characters in documents and filenames
 - Cross-platform (Windows/Linux)
 - Handles large files by saving to disk instead of returning in context
+
+Uses:
+  - Microsoft MarkItDown (https://github.com/microsoft/markitdown) — any-format → MD
+  - Inspired by vscode-markdown-pdf (https://github.com/showzs/vscode-markdown-pdf) — MD → PDF approach
 """
 
 import asyncio
+import contextlib
 import logging
 import sys
 import unicodedata
@@ -20,15 +27,13 @@ from pathlib import Path
 try:
     from . import __version__
 except ImportError:
-    __version__ = "1.0.0"
+    __version__ = "2.0.0"
 
 # Ensure UTF-8 encoding for stdin/stdout/stderr (important for Windows)
 if sys.platform == "win32":
     sys.stdin.reconfigure(encoding="utf-8")
     sys.stdout.reconfigure(encoding="utf-8")
     sys.stderr.reconfigure(encoding="utf-8")
-
-import contextlib
 
 from mcp.server import InitializationOptions, NotificationOptions, Server, stdio
 from mcp.types import TextContent, Tool
@@ -45,18 +50,23 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Import MarkItDown
+# ---------------------------------------------------------------------------
+# MarkItDown (PDF → MD)
+# ---------------------------------------------------------------------------
+
 try:
     from markitdown import MarkItDown
 except ImportError:
     logger.error("MarkItDown not installed. Run: pip install markitdown")
     raise
 
-# Create server instance
 server = Server("flexberry-markitdown-mcp")
 markitdown = MarkItDown()
 
-# Supported file extensions
+# ---------------------------------------------------------------------------
+# Supported extensions for MarkItDown conversion
+# ---------------------------------------------------------------------------
+
 SUPPORTED_EXTENSIONS = {
     # Documents
     ".pdf",
@@ -98,11 +108,34 @@ SUPPORTED_EXTENSIONS = {
     ".epub",
 }
 
+# PDF backend availability flags
+_PLAYWRIGHT_AVAILABLE = False
+_WEASYPRINT_AVAILABLE = False
+
+try:
+    import playwright  # noqa: F401
+
+    _PLAYWRIGHT_AVAILABLE = True
+except ImportError:
+    pass
+
+try:
+    import weasyprint  # noqa: F401
+
+    _WEASYPRINT_AVAILABLE = True
+except ImportError:
+    pass
+
+
+# ---------------------------------------------------------------------------
+# Utility functions
+# ---------------------------------------------------------------------------
+
 
 def get_supported_extensions_description() -> str:
-    """Return a human-readable description of supported formats."""
+    """Return a human-readable description of supported formats for MarkItDown."""
     return """
-Supported file formats:
+Supported file formats for convert_to_markdown:
 - Documents: PDF, DOCX, DOC, PPTX, PPT, XLSX, XLS
 - Web: HTML, HTM, XML, URL
 - Data: CSV, JSON
@@ -112,6 +145,30 @@ Supported file formats:
 - Archives: ZIP
 - E-books: EPUB
 """.strip()
+
+
+def get_pdf_backend_description() -> str:
+    """Return a description of available PDF backends."""
+    lines = ["Available PDF backends for convert_to_pdf:"]
+
+    if _PLAYWRIGHT_AVAILABLE:
+        lines.append(
+            "- playwright (DEFAULT): Headless Chromium. Supports JS-rendered content "
+            "(Mermaid diagrams, PlantUML, etc.). Chromium is auto-downloaded on first use."
+        )
+    else:
+        lines.append("- playwright: NOT INSTALLED. Install with: pip install flexberry-markitdown-mcp")
+
+    if _WEASYPRINT_AVAILABLE:
+        lines.append(
+            "- weasyprint: Pure-Python renderer. No browser required. "
+            "Does NOT support JS-rendered content. Good lightweight alternative."
+        )
+    else:
+        lines.append("- weasyprint: NOT INSTALLED. Install with: pip install flexberry-markitdown-mcp[weasyprint]")
+
+    lines.append("Current default backend: playwright")
+    return "\n".join(lines)
 
 
 def dump_codepoints(s: str) -> str:
@@ -128,20 +185,9 @@ def resolve_existing_file(file_path: str) -> Path:
 
     On Windows, filenames can be stored in different Unicode forms (NFC vs NFD).
     This function tries to find the actual file by normalizing names and comparing.
-
-    Args:
-        file_path: The requested file path (may be in any Unicode form)
-
-    Returns:
-        Path to the existing file
-
-    Raises:
-        FileNotFoundError: If no matching file is found
-        ValueError: If multiple files match (ambiguous)
     """
     requested = Path(file_path)
 
-    # First, try direct check - this works for most cases
     if requested.exists():
         return requested
 
@@ -161,7 +207,6 @@ def resolve_existing_file(file_path: str) -> Path:
         child_nfc = unicodedata.normalize("NFC", child_name)
         child_nfd = unicodedata.normalize("NFD", child_name)
 
-        # Check if names match in any normalization form
         is_match = child_name == requested_name or child_nfc == requested_nfc or child_nfd == requested_nfd
 
         if is_match:
@@ -173,7 +218,7 @@ def resolve_existing_file(file_path: str) -> Path:
     elif len(matches) == 0:
         raise FileNotFoundError(
             f"File does not exist: {requested}\n"
-            f"Direct path check: {file_path} → {requested} → exists={requested.exists()}\n"
+            f"Direct path check: {file_path} -> {requested} -> exists={requested.exists()}\n"
             f"Parent directory: {parent}\n"
             f"Files in parent: {[f.name for f in parent.iterdir() if f.is_file()]}"
         )
@@ -184,40 +229,19 @@ def resolve_existing_file(file_path: str) -> Path:
 
 
 def normalize_path(file_path: str) -> Path:
-    """
-    Normalize file path for cross-platform compatibility.
-
-    Handles both Windows and Linux paths, including paths with Cyrillic characters.
-
-    In Python 3, paths are Unicode by default and work correctly on Windows.
-    No manual encoding/decoding is needed - pathlib handles this properly.
-    """
-    # Expand user home directory (~)
+    """Normalize file path for cross-platform compatibility."""
     path = Path(file_path).expanduser()
-
-    # Resolve to absolute path
     path = path.resolve()
-
     return path
 
 
-def generate_output_path(input_path: Path, suffix: str = "_converted") -> Path:
-    """
-    Generate output path for the converted markdown file.
-    The output file will be placed next to the original with .md extension.
-    Uses pathlib for proper Unicode handling on Windows.
-    """
-    # Use pathlib methods for proper path construction
-    # This handles Unicode filenames (including Cyrillic) correctly on all platforms
-    # Replace original extension with .md
-    return input_path.parent / f"{input_path.stem}.md"
+def generate_output_path(input_path: Path, ext: str = ".md") -> Path:
+    """Generate output path for the converted file."""
+    return input_path.parent / f"{input_path.stem}{ext}"
 
 
 def make_unique_path(target: Path) -> Path:
-    """
-    Generate a unique path by adding (1), (2), etc. if file already exists.
-    Uses pathlib for proper Unicode handling.
-    """
+    """Generate a unique path by adding (1), (2), etc. if file already exists."""
     if not target.exists():
         return target
 
@@ -226,37 +250,39 @@ def make_unique_path(target: Path) -> Path:
         if not candidate.exists():
             return candidate
 
-    raise RuntimeError("Не удалось подобрать уникальное имя файла")
+    raise RuntimeError("Could not generate a unique file name")
+
+
+# ---------------------------------------------------------------------------
+# MCP Tool definitions
+# ---------------------------------------------------------------------------
 
 
 @server.list_tools()
 async def list_tools() -> list[Tool]:
     """List available MCP tools."""
     return [
+        # ── convert_to_markdown ──────────────────────────────────────────
         Tool(
             name="convert_to_markdown",
-            description="""Convert a file to Markdown format using MarkItDown.
-
-The converted file is saved to disk next to the original file with .md extension.
-This is designed for large files that cannot fit in LLM context.
-
-IMPORTANT: Always use ABSOLUTE paths when calling this tool. Relative paths will be resolved
-from the server's working directory, not the caller's directory.
-
-Features:
-- Automatically handles Unicode/Cyrillic filenames on Windows
-- Uses atomic write pattern (temp file + rename) for safety
-- Auto-unique filenames if target exists (adds (1), (2), etc.)
-- Supports overwrite flag to replace existing files
-
-"""
+            description=(
+                "Convert a file to Markdown format using MarkItDown.\n\n"
+                "The converted file is saved to disk next to the original file with .md extension.\n"
+                "This is designed for large files that cannot fit in LLM context.\n\n"
+                "IMPORTANT: Always use ABSOLUTE paths when calling this tool.\n\n"
+                "Features:\n"
+                "- Automatically handles Unicode/Cyrillic filenames on Windows\n"
+                "- Uses atomic write pattern (temp file + rename) for safety\n"
+                "- Auto-unique filenames if target exists (adds (1), (2), etc.)\n"
+                "- Supports overwrite flag to replace existing files\n\n"
+            )
             + get_supported_extensions_description(),
             inputSchema={
                 "type": "object",
                 "properties": {
                     "file_path": {
                         "type": "string",
-                        "description": "ABSOLUTE path to the file to convert. Supports Cyrillic characters in paths. Example: C:\\Users\\user\\documents\\файл.docx or /home/user/documents/file.docx",
+                        "description": "ABSOLUTE path to the file to convert. Supports Cyrillic characters in paths.",
                     },
                     "output_path": {
                         "type": "string",
@@ -264,13 +290,104 @@ Features:
                     },
                     "overwrite": {
                         "type": "boolean",
-                        "description": "Overwrite existing output file if it exists. Default: false. If false and file exists, auto-unique name is generated (adds (1), (2), etc.).",
+                        "description": "Overwrite existing output file if it exists. Default: false.",
                         "default": False,
                     },
                 },
                 "required": ["file_path"],
             },
         ),
+        # ── convert_to_pdf ──────────────────────────────────────────────
+        Tool(
+            name="convert_to_pdf",
+            description=(
+                "Convert a Markdown file to PDF.\n\n"
+                "Default backend: Playwright (headless Chromium) — same approach as vscode-markdown-pdf.\n"
+                "Chromium is auto-downloaded on first use, so no manual setup needed.\n"
+                "Supports JavaScript-rendered content (Mermaid diagrams, PlantUML, etc.).\n\n"
+                "Optional backend: WeasyPrint — pure Python, no browser required.\n"
+                "Install with: pip install flexberry-markitdown-mcp[weasyprint]\n\n"
+                "The PDF is saved to disk next to the original file (or at a custom output_path).\n\n"
+                "IMPORTANT: Always use ABSOLUTE paths when calling this tool.\n\n"
+                "Features:\n"
+                "- GitHub-flavored Markdown (tables, task lists, strikethrough)\n"
+                "- Syntax highlighting in code blocks (via Pygments)\n"
+                "- Configurable page format (A4, Letter, etc.) and margins\n"
+                "- Custom CSS injection\n"
+                "- Header/footer with page numbers\n\n"
+            )
+            + get_pdf_backend_description(),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "file_path": {
+                        "type": "string",
+                        "description": "ABSOLUTE path to the Markdown (.md) file to convert to PDF.",
+                    },
+                    "output_path": {
+                        "type": "string",
+                        "description": "Optional custom output path for the PDF. If not specified, saves next to the original file with .pdf extension.",
+                    },
+                    "backend": {
+                        "type": "string",
+                        "enum": ["playwright", "weasyprint"],
+                        "description": "PDF generation backend. 'playwright' (default) or 'weasyprint'.",
+                        "default": "playwright",
+                    },
+                    "overwrite": {
+                        "type": "boolean",
+                        "description": "Overwrite existing output file if it exists. Default: false.",
+                        "default": False,
+                    },
+                    "custom_css": {
+                        "type": "string",
+                        "description": "Additional CSS to inject into the PDF. Overrides default styles for matching selectors.",
+                    },
+                    "include_default_styles": {
+                        "type": "boolean",
+                        "description": "Include built-in GitHub-like styles. Default: true. Set to false if providing full custom CSS.",
+                        "default": True,
+                    },
+                    "format": {
+                        "type": "string",
+                        "description": "Paper format: A4, A3, Letter, Legal, Tabloid, etc. Default: A4.",
+                        "default": "A4",
+                    },
+                    "margin_top": {
+                        "type": "string",
+                        "description": "Top margin. Default: 1.5cm.",
+                        "default": "1.5cm",
+                    },
+                    "margin_bottom": {
+                        "type": "string",
+                        "description": "Bottom margin. Default: 1cm.",
+                        "default": "1cm",
+                    },
+                    "margin_left": {
+                        "type": "string",
+                        "description": "Left margin. Default: 1cm.",
+                        "default": "1cm",
+                    },
+                    "margin_right": {
+                        "type": "string",
+                        "description": "Right margin. Default: 1cm.",
+                        "default": "1cm",
+                    },
+                    "print_background": {
+                        "type": "boolean",
+                        "description": "Print background colors and images. Default: true.",
+                        "default": True,
+                    },
+                    "display_header_footer": {
+                        "type": "boolean",
+                        "description": "Display header and footer in PDF. Default: true.",
+                        "default": True,
+                    },
+                },
+                "required": ["file_path"],
+            },
+        ),
+        # ── get_supported_formats ────────────────────────────────────────
         Tool(
             name="get_supported_formats",
             description="Get a list of supported file formats for conversion.",
@@ -279,15 +396,22 @@ Features:
                 "properties": {},
             },
         ),
+        # ── check_file_exists ────────────────────────────────────────────
         Tool(
             name="check_file_exists",
             description="Check if a file exists and get its information. Use ABSOLUTE paths.",
             inputSchema={
                 "type": "object",
-                "properties": {"file_path": {"type": "string", "description": "ABSOLUTE path to the file to check."}},
+                "properties": {
+                    "file_path": {
+                        "type": "string",
+                        "description": "ABSOLUTE path to the file to check.",
+                    }
+                },
                 "required": ["file_path"],
             },
         ),
+        # ── list_directory ───────────────────────────────────────────────
         Tool(
             name="list_directory",
             description="List files in a directory. Use this to verify file paths and see available files.",
@@ -309,14 +433,26 @@ Features:
     ]
 
 
+# ---------------------------------------------------------------------------
+# MCP Tool handler
+# ---------------------------------------------------------------------------
+
+
 @server.call_tool()
 async def call_tool(name: str, arguments: dict) -> list[TextContent]:
     """Handle tool calls."""
     logger.info(f"Tool called: {name} with arguments: {arguments}")
 
+    # ── get_supported_formats ────────────────────────────────────────────
     if name == "get_supported_formats":
-        return [TextContent(type="text", text=get_supported_extensions_description())]
+        return [
+            TextContent(
+                type="text",
+                text=get_supported_extensions_description() + "\n\n" + get_pdf_backend_description(),
+            )
+        ]
 
+    # ── list_directory ───────────────────────────────────────────────────
     if name == "list_directory":
         directory_path = arguments.get("directory_path", "")
         pattern = arguments.get("pattern", "*")
@@ -342,8 +478,8 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
                 size = f.stat().st_size if f.is_file() else 0
                 ext = f.suffix.lower() if f.suffix else ""
                 is_supported = ext in SUPPORTED_EXTENSIONS if f.is_file() else False
-                supported_mark = "✓" if is_supported else ""
-                # Show codepoints for filenames with non-ASCII characters
+                is_md = ext == ".md" if f.is_file() else False
+                supported_mark = "✓" if is_supported else ("📄" if is_md else "")
                 name_codepoints = ""
                 if any(ord(c) > 127 for c in f.name):
                     name_codepoints = f" [{dump_codepoints(f.name)}]"
@@ -355,6 +491,7 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
             logger.exception(f"Error listing directory: {directory_path}")
             return [TextContent(type="text", text=f"Error listing directory: {str(e)}")]
 
+    # ── check_file_exists ────────────────────────────────────────────────
     if name == "check_file_exists":
         file_path = arguments.get("file_path", "")
 
@@ -362,7 +499,6 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
             return [TextContent(type="text", text="Error: file_path is required.")]
 
         try:
-            # Resolve file path (handles Unicode normalization issues)
             path = resolve_existing_file(file_path)
 
             if not path.is_file():
@@ -371,25 +507,29 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
             size = path.stat().st_size
             ext = path.suffix.lower()
             is_supported = ext in SUPPORTED_EXTENSIONS
+            is_md = ext == ".md"
 
             return [
                 TextContent(
                     type="text",
-                    text=f"""File: {path}
-Size: {size:,} bytes ({size / 1024 / 1024:.2f} MB)
-Extension: {ext}
-Supported: {"Yes" if is_supported else "No"}""",
+                    text=(
+                        f"File: {path}\n"
+                        f"Size: {size:,} bytes ({size / 1024 / 1024:.2f} MB)\n"
+                        f"Extension: {ext}\n"
+                        f"Supported (→MD): {'Yes' if is_supported else 'No'}\n"
+                        f"Can convert to PDF: {'Yes' if is_md else 'No'}"
+                    ),
                 )
             ]
 
         except FileNotFoundError as e:
             logger.exception(f"File not found: {file_path}")
             return [TextContent(type="text", text=f"File does not exist: {str(e)}")]
-
         except Exception as e:
             logger.exception(f"Error checking file: {file_path}")
             return [TextContent(type="text", text=f"Error checking file: {str(e)}")]
 
+    # ── convert_to_markdown ──────────────────────────────────────────────
     if name == "convert_to_markdown":
         file_path = arguments.get("file_path", "")
         output_path_arg = arguments.get("output_path", "")
@@ -399,10 +539,8 @@ Supported: {"Yes" if is_supported else "No"}""",
             return [TextContent(type="text", text="Error: file_path is required.")]
 
         try:
-            # Resolve input file path (handles Unicode normalization issues)
             input_path = resolve_existing_file(file_path)
 
-            # Check extension
             ext = input_path.suffix.lower()
             if ext not in SUPPORTED_EXTENSIONS:
                 return [
@@ -412,83 +550,191 @@ Supported: {"Yes" if is_supported else "No"}""",
                     )
                 ]
 
-            # Determine output path
             if output_path_arg:
                 output_path = normalize_path(output_path_arg)
             else:
-                output_path = generate_output_path(input_path)
+                output_path = generate_output_path(input_path, ".md")
 
-            # Auto-unique path if file exists and overwrite is False
             if not overwrite and output_path.exists():
                 output_path = make_unique_path(output_path)
 
-            # Get input file size for logging
             input_size = input_path.stat().st_size
             logger.info(f"Converting file: {input_path} ({input_size:,} bytes)")
 
-            # Convert the file using MarkItDown
-            # Run in executor to avoid blocking the event loop for large files
-            loop = asyncio.get_event_loop()
+            loop = asyncio.get_running_loop()
             result = await loop.run_in_executor(None, markitdown.convert, str(input_path))
 
-            # Get the markdown content
             markdown_content = result.text_content
 
-            # Write to output file using atomic write pattern:
-            # 1. Write to temp file first
-            # 2. Rename to final path (atomic on same filesystem)
-            # This prevents partial/corrupt files if conversion fails
             temp_path = output_path.parent / f".{output_path.stem}.{uuid.uuid4().hex}.tmp"
             try:
-                # Write to temp file with UTF-8 encoding
                 temp_path.write_text(markdown_content, encoding="utf-8", newline="")
-
-                # Atomic rename to final path
                 temp_path.replace(output_path)
             finally:
-                # Clean up temp file if it still exists
                 if temp_path.exists():
                     with contextlib.suppress(OSError):
                         temp_path.unlink()
 
             output_size = output_path.stat().st_size
-
             logger.info(f"Conversion complete: {output_path} ({output_size:,} bytes)")
 
-            # Return structured result with overwrite flag
             return [
                 TextContent(
                     type="text",
-                    text=f"""Conversion successful!
-
-Input file: {input_path}
-Input size: {input_size:,} bytes ({input_size / 1024 / 1024:.2f} MB)
-
-Output file: {output_path}
-Output size: {output_size:,} bytes ({output_size / 1024 / 1024:.2f} MB)
-Overwritten: {overwrite}
-
-The converted Markdown file has been saved to disk and is ready for use.""",
+                    text=(
+                        f"Conversion successful!\n\n"
+                        f"Input file: {input_path}\n"
+                        f"Input size: {input_size:,} bytes ({input_size / 1024 / 1024:.2f} MB)\n\n"
+                        f"Output file: {output_path}\n"
+                        f"Output size: {output_size:,} bytes ({output_size / 1024 / 1024:.2f} MB)\n"
+                        f"Overwritten: {overwrite}\n\n"
+                        f"The converted Markdown file has been saved to disk and is ready for use."
+                    ),
                 )
             ]
 
         except Exception as e:
             logger.exception(f"Error converting file: {file_path}")
             return [
-                TextContent(type="text", text=f"Error converting file: {str(e)}\n\nCheck the log file at: {log_file}")
+                TextContent(
+                    type="text",
+                    text=f"Error converting file: {str(e)}\n\nCheck the log file at: {log_file}",
+                )
+            ]
+
+    # ── convert_to_pdf ──────────────────────────────────────────────────
+    if name == "convert_to_pdf":
+        file_path = arguments.get("file_path", "")
+        output_path_arg = arguments.get("output_path", "")
+        backend = arguments.get("backend", "playwright")
+        overwrite = arguments.get("overwrite", False)
+        custom_css = arguments.get("custom_css", "")
+        include_default_styles = arguments.get("include_default_styles", True)
+
+        # Page options
+        format_ = arguments.get("format", "A4")
+        margin_top = arguments.get("margin_top", "1.5cm")
+        margin_bottom = arguments.get("margin_bottom", "1cm")
+        margin_left = arguments.get("margin_left", "1cm")
+        margin_right = arguments.get("margin_right", "1cm")
+        print_background = arguments.get("print_background", True)
+        display_header_footer = arguments.get("display_header_footer", True)
+
+        if not file_path:
+            return [TextContent(type="text", text="Error: file_path is required.")]
+
+        try:
+            input_path = resolve_existing_file(file_path)
+
+            ext = input_path.suffix.lower()
+            if ext not in {".md", ".markdown", ".mdown", ".mkd", ".mkdn"}:
+                return [
+                    TextContent(
+                        type="text",
+                        text=(f"Error: convert_to_pdf only supports Markdown files (.md, .markdown). Got: '{ext}'"),
+                    )
+                ]
+
+            if output_path_arg:
+                output_path = normalize_path(output_path_arg)
+            else:
+                output_path = generate_output_path(input_path, ".pdf")
+
+            if not overwrite and output_path.exists():
+                output_path = make_unique_path(output_path)
+
+            input_size = input_path.stat().st_size
+            logger.info(f"Converting MD to PDF: {input_path} -> {output_path} (backend={backend})")
+
+            # Import the converter lazily so that the server can start even
+            # if only one backend is installed
+            from .converter import convert_md_file_to_pdf
+
+            # Build kwargs for the converter
+            converter_kwargs: dict = {
+                "backend": backend,
+                "custom_css": custom_css,
+                "include_default_styles": include_default_styles,
+                "title": input_path.stem,
+                "format": format_,
+                "margin_top": margin_top,
+                "margin_bottom": margin_bottom,
+                "margin_left": margin_left,
+                "margin_right": margin_right,
+                "print_background": print_background,
+            }
+
+            # Playwright-specific options
+            if backend == "playwright":
+                converter_kwargs["display_header_footer"] = display_header_footer
+
+            # Run conversion in executor to avoid blocking the event loop
+            loop = asyncio.get_running_loop()
+            result_path = await loop.run_in_executor(
+                None,
+                lambda: convert_md_file_to_pdf(
+                    input_path=input_path,
+                    output_path=output_path,
+                    **converter_kwargs,
+                ),
+            )
+
+            output_size = result_path.stat().st_size
+            logger.info(f"PDF conversion complete: {result_path} ({output_size:,} bytes)")
+
+            return [
+                TextContent(
+                    type="text",
+                    text=(
+                        f"PDF conversion successful!\n\n"
+                        f"Input file: {input_path}\n"
+                        f"Input size: {input_size:,} bytes ({input_size / 1024 / 1024:.2f} MB)\n\n"
+                        f"Output file: {result_path}\n"
+                        f"Output size: {output_size:,} bytes ({output_size / 1024 / 1024:.2f} MB)\n"
+                        f"Backend: {backend}\n"
+                        f"Overwritten: {overwrite}\n\n"
+                        f"The PDF file has been saved to disk and is ready for use."
+                    ),
+                )
+            ]
+
+        except ImportError as e:
+            logger.exception(f"Missing dependency for PDF conversion: {e}")
+            return [
+                TextContent(
+                    type="text",
+                    text=(
+                        f"Error: Missing dependency for PDF conversion.\n{str(e)}\n\n{get_pdf_backend_description()}"
+                    ),
+                )
+            ]
+        except Exception as e:
+            logger.exception(f"Error converting file to PDF: {file_path}")
+            return [
+                TextContent(
+                    type="text",
+                    text=f"Error converting file to PDF: {str(e)}\n\nCheck the log file at: {log_file}",
+                )
             ]
 
     return [TextContent(type="text", text=f"Error: Unknown tool '{name}'")]
 
 
+# ---------------------------------------------------------------------------
+# Server entry point
+# ---------------------------------------------------------------------------
+
+
 async def run_server():
     """Run the MCP server."""
-    logger.info("Starting Flexberry MarkItDown MCP Server")
+    logger.info("Starting Flexberry MarkItDown MCP Server (with PDF export)")
     logger.info(f"Platform: {sys.platform}")
     logger.info(f"Python: {sys.version}")
     logger.info(f"Log file: {log_file}")
     logger.info(f"Current working directory: {Path.cwd()}")
     logger.info(f"File system encoding: {sys.getfilesystemencoding()}")
+    logger.info(f"Playwright available: {_PLAYWRIGHT_AVAILABLE}")
+    logger.info(f"WeasyPrint available: {_WEASYPRINT_AVAILABLE}")
 
     # Run the server using stdio transport
     logger.info("About to create stdio_server")
