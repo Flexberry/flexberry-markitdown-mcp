@@ -10,9 +10,9 @@ Features:
 - Cross-platform (Windows/Linux)
 - Handles large files by saving to disk instead of returning in context
 
-Based on:
-  - https://github.com/Flexberry/flexberry-markitdown-mcp  (PDF → MD)
-  - https://github.com/showzs/vscode-markdown-pdf          (MD → PDF concept)
+Uses:
+  - Microsoft MarkItDown (https://github.com/microsoft/markitdown) — any-format → MD
+  - Inspired by vscode-markdown-pdf (https://github.com/showzs/vscode-markdown-pdf) — MD → PDF approach
 """
 
 import asyncio
@@ -567,7 +567,7 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
             input_size = input_path.stat().st_size
             logger.info(f"Converting file: {input_path} ({input_size:,} bytes)")
 
-            loop = asyncio.get_event_loop()
+            loop = asyncio.get_running_loop()
             result = await loop.run_in_executor(None, markitdown.convert, str(input_path))
 
             markdown_content = result.text_content
@@ -680,7 +680,7 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
                 converter_kwargs["display_header_footer"] = display_header_footer
 
             # Run conversion in executor to avoid blocking the event loop
-            loop = asyncio.get_event_loop()
+            loop = asyncio.get_running_loop()
             result_path = await loop.run_in_executor(
                 None,
                 lambda: convert_md_file_to_pdf(

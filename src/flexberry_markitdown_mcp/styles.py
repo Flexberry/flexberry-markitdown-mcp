@@ -1,5 +1,27 @@
 """Default CSS styles for PDF export, inspired by vscode-markdown-pdf."""
 
+
+def get_pygments_css() -> str:
+    """
+    Generate syntax highlighting CSS from Pygments.
+
+    Uses Pygments' built-in HtmlFormatter to produce CSS that matches
+    the actual class names generated during code highlighting. Falls back
+    to an empty string if Pygments is not installed.
+
+    The result is cached after the first call.
+    """
+    try:
+        from pygments.formatters import HtmlFormatter
+
+        formatter = HtmlFormatter(cssclass="highlight")
+        return (
+            "/* Syntax highlighting (auto-generated from Pygments) */\n"
+            + formatter.get_style_defs(".highlight")
+        )
+    except ImportError:
+        return ""
+
 DEFAULT_PDF_STYLES = """
 /* ===== Base Typography ===== */
 body {
@@ -222,86 +244,5 @@ img {
     tr, td, th {
         page-break-inside: avoid;
     }
-}
-"""
-
-HIGHLIGHT_JS_CSS = """
-/* GitHub-style code highlighting */
-.hljs {
-    display: block;
-    overflow-x: auto;
-    padding: 0.5em;
-    color: #24292e;
-    background: #f6f8fa;
-}
-
-.hljs-comment,
-.hljs-quote {
-    color: #6a737d;
-    font-style: italic;
-}
-
-.hljs-keyword,
-.hljs-selector-tag,
-.hljs-addition {
-    color: #d73a49;
-}
-
-.hljs-number,
-.hljs-string,
-.hljs-meta .hljs-meta-string,
-.hljs-literal,
-.hljs-doctag,
-.hljs-regexp {
-    color: #032f62;
-}
-
-.hljs-title,
-.hljs-section,
-.hljs-name,
-.hljs-selector-id,
-.hljs-selector-class {
-    color: #6f42c1;
-}
-
-.hljs-attribute,
-.hljs-attr,
-.hljs-variable,
-.hljs-template-variable,
-.hljs-class .hljs-title,
-.hljs-type {
-    color: #e36209;
-}
-
-.hljs-symbol,
-.hljs-bullet,
-.hljs-subst,
-.hljs-meta,
-.hljs-meta .hljs-keyword,
-.hljs-selector-attr,
-.hljs-selector-pseudo,
-.hljs-link {
-    color: #005cc5;
-}
-
-.hljs-built_in,
-.hljs-deletion {
-    color: #22863a;
-}
-
-.hljs-params {
-    color: #24292e;
-}
-
-.hljs-formula {
-    background-color: #f6f8fa;
-}
-
-.hljs-emphasis {
-    font-style: italic;
-}
-
-.hljs-strong {
-    font-weight: bold;
 }
 """

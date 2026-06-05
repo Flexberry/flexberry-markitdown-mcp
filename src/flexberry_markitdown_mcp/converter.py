@@ -15,7 +15,7 @@ import sys
 import tempfile
 from pathlib import Path
 
-from .styles import DEFAULT_PDF_STYLES, HIGHLIGHT_JS_CSS
+from .styles import DEFAULT_PDF_STYLES, get_pygments_css
 
 logger = logging.getLogger(__name__)
 
@@ -43,21 +43,16 @@ def ensure_chromium() -> None:
     try:
         from playwright.sync_api import sync_playwright
 
-        # Quick check: try to find the Chromium executable without launching it.
-        # Playwright stores browser paths internally; if chromium is not installed,
-        # launching will raise an error with a clear message.
+        # Check if the Chromium executable exists without launching a browser.
+        # Playwright computes the expected path from its internal registry;
+        # if the file is missing the browser needs to be installed.
         with sync_playwright() as pw:
-            try:
-                browser = pw.chromium.launch(headless=True)
-                browser.close()
+            exec_path = pw.chromium.executable_path
+            if exec_path and Path(exec_path).exists():
                 logger.info("Chromium browser is available")
-            except Exception as launch_err:
-                err_msg = str(launch_err).lower()
-                if "not found" in err_msg or "not installed" in err_msg or "executable" in err_msg:
-                    logger.info("Chromium not found, auto-installing (one-time setup)...")
-                    _install_chromium()
-                else:
-                    raise
+            else:
+                logger.info("Chromium not found, auto-installing (one-time setup)...")
+                _install_chromium()
 
     except ImportError:
         raise ImportError(
@@ -233,7 +228,7 @@ def build_html_document(
     """
     styles = ""
     if include_default_styles:
-        styles = DEFAULT_PDF_STYLES + "\n" + HIGHLIGHT_JS_CSS
+        styles = DEFAULT_PDF_STYLES + "\n" + get_pygments_css()
     if custom_css:
         styles += "\n" + custom_css
 
