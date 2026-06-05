@@ -1,34 +1,34 @@
 [project]
 name = "flexberry-markitdown-mcp"
-version = "1.0.0"
-description = "MCP server for converting files to Markdown using MarkItDown"
+version = "2.0.0"
+description = "MCP server for converting files to Markdown (via MarkItDown) and Markdown to PDF"
 readme = "README_EN.md"
 requires-python = ">=3.10"
 license = {text = "MIT"}
-authors = [
-    {name = "Flexberry Team"}
-]
-keywords = ["mcp", "markitdown", "conversion", "markdown", "flexberry"]
-classifiers = [
-    "Development Status :: 4 - Beta",
-    "Intended Audience :: Developers",
-    "License :: OSI Approved :: MIT License",
-    "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.10",
-    "Programming Language :: Python :: 3.11",
-    "Programming Language :: Python :: 3.12",
-]
+authors = [{name = "Flexberry Team"}]
+keywords = ["mcp", "markitdown", "conversion", "markdown", "pdf", "flexberry"]
 
 dependencies = [
     "mcp>=1.0.0",
     "markitdown[all]>=0.0.1a2",
+    # MD → PDF conversion
+    "markdown-it-py>=3.0.0",
+    "mdit-py-plugins>=0.4.0",
+    "pygments>=2.17.0",
+    # Default PDF backend: headless Chromium (same approach as vscode-markdown-pdf / puppeteer-core)
+    "playwright>=1.40.0",
 ]
 
 [project.optional-dependencies]
+# Lightweight pure-Python fallback (no browser required, but no JS rendering)
+weasyprint = [
+    "weasyprint>=61.0",
+]
 dev = [
     "pytest>=7.0.0",
     "pytest-asyncio>=0.21.0",
     "pytest-cov>=4.0.0",
+    "ruff>=0.4.0",
 ]
 
 [project.scripts]
